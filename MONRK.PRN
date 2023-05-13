@@ -66,7 +66,8 @@
   0002                          STAT    equ     2       ;  Status register 
                                 ; 
                                 ;  Define monitor serial port 
-  C402                          SERIAL_STATUS equ   VV55+STAT 
+  C402                          SERIAL_STATUS   equ   VV55+STAT 
+  C401                          CLIENT_STATUS   equ   VV55+1 
   C400                          SERIAL_DATA   equ   VV55+DATA 
   C403                          SERIAL_CONTROL equ  VV55+3 
                                  
@@ -105,20 +106,20 @@
                                 ; 
   B007    F5                    R1:     PUSH    PSW 
   B008    3E 01                         MVI     A,1                     ;state = 1 (breakpoint) 
-  B00A    C3 B09E                       JMP     INT_ENTRY 
+  B00A    C3 B0BF                       JMP     INT_ENTRY 
                                 ; 
                                 ;=========================================================================== 
                                 ;  Power on reset 
   B00D                          RESET: 
                                 ; 
                                 ;  Initialize monitor 
-  B00D    31 B2D9               INIT:   LXI     SP,MONSTACK 
+  B00D    31 B2FA               INIT:   LXI     SP,MONSTACK 
                                 ; 
                                 ;=========================================================================== 
-                                ;  Perform user hardware initialization here 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-2
 
 
+                                ;  Perform user hardware initialization here 
                                 ;  VV55 does not require initialization 
                                 ; 
                                 ;=========================================================================== 
@@ -136,31 +137,31 @@
                                 ;=========================================================================== 
                                 ; 
                                 ;  Initialize user registers 
-  B021    21 B2C9                       LXI     H,INITSTACK 
-  B024    22 B2DB                       SHLD    REG_SP                  ;INIT USER'S STACK POINTER 
+  B021    21 B2EA                       LXI     H,INITSTACK 
+  B024    22 B2FC                       SHLD    REG_SP                  ;INIT USER'S STACK POINTER 
   B027    AF                            XRA     A 
   B028    67                            MOV     H,A 
   B029    6F                            MOV     L,A 
-  B02A    22 B2E5                       SHLD    REG_PC                  ;INIT ALL REGS TO 0 
-  B02D    22 B2DD                       SHLD    REG_HL 
-  B030    22 B2DF                       SHLD    REG_BC 
-  B033    22 B2E1                       SHLD    REG_DE 
-  B036    22 B2E3                       SHLD    REG_PSW 
-  B039    32 B2D9                       STA     REG_STATE               ;set state as "RESET" 
+  B02A    22 B306                       SHLD    REG_PC                  ;INIT ALL REGS TO 0 
+  B02D    22 B2FE                       SHLD    REG_HL 
+  B030    22 B300                       SHLD    REG_BC 
+  B033    22 B302                       SHLD    REG_DE 
+  B036    22 B304                       SHLD    REG_PSW 
+  B039    32 B2FA                       STA     REG_STATE               ;set state as "RESET" 
                                 ; 
                                 ;  Initialize memory paging variables and hardware (if any) 
-  B03C    32 B2DA                       STA     REG_PAGE                ;page 0 
+  B03C    32 B2FB                       STA     REG_PAGE                ;page 0 
                                 ;;;     STA     PAGEIMAGE 
                                 ;;;     OUT     PAGELATCH               ;set hardware page 
                                 ; 
                                 ; TODO: if you can read interrupt state, you may want to set a different initial value 
-  B03F    32 B2E7                       STA     REG_IM 
+  B03F    32 B308                       STA     REG_IM 
                                 ; 
                                 ;  Set function code for "GO".  Then if we reset after being told to 
                                 ;  GO, we will come back with registers so user can see the crash 
   B042    3E FA                         MVI     A,FN_RUN_TARGET 
-  B044    32 B2E8                       STA     COMBUF 
-  B047    C3 B198                       JMP     RETURN_REGS             ;DUMP REGS, ENTER MONITOR 
+  B044    32 B309                       STA     COMBUF 
+  B047    C3 B1B9                       JMP     RETURN_REGS             ;DUMP REGS, ENTER MONITOR 
                                 ; 
                                 ;=========================================================================== 
                                 ;  Get a character to A 
@@ -171,72 +172,86 @@
                                 ;  Uses 4 bytes of stack including return address 
                                 ; 
   B04A                          GETCHAR: 
-  B04A    3E 8B                         mvi     A,8BH ; A - input, B - output, Clow, Chigh - input 
+  B04A    3E 89                         mvi     A,89H ; A - input, B - output, Clow, Chigh - input 
   B04C    32 C403                       sta     SERIAL_CONTROL 
-  B04F    D5                            PUSH    D 
-  B050    11 8000                       LXI     D,8000h                 ;long timeout 
+  B04F    3E 01                         MVI     A,1 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-3
 
 
-  B053    1B                    gc10:   DCX     D 
-  B054    7A                            MOV     A,D 
-  B055    B3                            ORA     E 
-  B056    CA B067                       JZ      gc90                    ;exit if timeout 
-  B059    3A C402                       LDA     SERIAL_STATUS           ;read device status 
-  B05C    E6 01                         ANI     RXRDY 
-  B05E    C2 B053                       JNZ      gc10                    ;not ready yet. 
+  B051    32 C401                       sta     CLIENT_STATUS 
+  B054    D5                            PUSH    D 
+  B055    11 8000                       LXI     D,8000h                 ;long timeout 
+  B058    1B                    gc10:   DCX     D 
+  B059    7A                            MOV     A,D 
+  B05A    B3                            ORA     E 
+  B05B    CA B072                       JZ      gc90                    ;exit if timeout 
+  B05E    3A C402                       LDA     SERIAL_STATUS           ;read device status 
+  B061    E6 01                         ANI     RXRDY 
+  B063    C2 B058                       JNZ      gc10                    ;not ready yet. 
                                 ; 
                                 ;  Data received:  return CY=0. data in A 
-  B061    AF                            XRA     A                       ;cy=0 
-  B062    3A C400                       LDA     SERIAL_DATA             ;read data 
-                                 
-  B065    D1                            POP     D 
-  B066    C9                            RET 
+  B066    AF                            XRA     A                       ;cy=0 
+  B067    3A C400                       LDA     SERIAL_DATA             ;read data 
+  B06A    F5                            push    psw 
+  B06B    AF                            xra     a 
+  B06C    32 C401                       STA     CLIENT_STATUS 
+  B06F    F1                            pop     psw 
+  B070    D1                            POP     D 
+  B071    C9                            RET 
                                 ; 
                                 ;  Timeout:  return CY=1 
-  B067    37                    gc90:   STC                             ;cy=1 
-  B068    D1                            POP     D 
-  B069    C9                            RET 
+  B072    37                    gc90:   STC                             ;cy=1 
+  B073    3E 00                         MVI     A,0 
+  B075    32 C401                       STA     CLIENT_STATUS 
+  B078    D1                            POP     D 
+  B079    C9                            RET 
                                 ; 
                                 ;=========================================================================== 
                                 ;  Output character in A 
                                 ; 
                                 ;  Uses 4 bytes of stack including return address 
                                 ; 
-  B06A                          PUTCHAR: 
-  B06A    F5                            PUSH    PSW                     ;save byte to output 
-  B06B    3E 9B                         mvi     A,9BH ; A - output, B - output, Clow, Chigh - input 
-  B06D    32 C403                       sta     SERIAL_CONTROL 
-  B070    3A C402               pc10:   LDA     SERIAL_STATUS           ;read device status 
-  B073    E6 02                         ANI     TXRDY                   ;rx ready ? 
-  B075    C2 B070                       JNZ     pc10 
+  B07A                          PUTCHAR: 
+  B07A    F5                            PUSH    PSW                     ;save byte to output 
+  B07B    3E 99                         mvi     A,99H ; A - output, B - output, Clow, Chigh - input 
+  B07D    32 C403                       sta     SERIAL_CONTROL 
+  B080    3E 02                         mvi     a,2 
+  B082    32 C401                       sta     CLIENT_STATUS; // Ready to send 
+  B085    3A C402               pc10:   LDA     SERIAL_STATUS           ;read device status 
+  B088    E6 02                         ANI     TXRDY                   ;rx ready ? 
+  B08A    C2 B085                       JNZ     pc10 
                                  
-  B078    F1                            POP     PSW 
-  B079    32 C400                       STA     SERIAL_DATA            ;transmit char - error in wiring! must write to _STATUS 
-                                        ;STA     SERIAL_STATUS           ;transmit char 
-  B07C    C9                            RET 
+  B08D    F1                            POP     PSW 
+  B08E    32 C400                       STA     SERIAL_DATA            ;transmit char - error in wiring! must write to _STATUS 
+  B091    AF                            xra     a 
+  B092    32 C401                       sta     CLIENT_STATUS 
+                                 
+  B095    3A C402               pc11:   LDA     SERIAL_STATUS           ; wait for server confirms reading a byte 
+  B098    E6 02                         ANI     TXRDY 
+  B09A    CA B095                       JZ      pc11 
+  B09D    C9                            RET 
                                 ; 
                                 ;=========================================================================== 
                                 ;  Response string for GET TARGET STATUS request 
                                 ;  Reply describes target: 
-  B07D    0E                    TSTG:   DB      14                      ;2: PROCESSOR TYPE = 8085 
-  B07E    43                            DB      COMBUF_SIZE             ;3: SIZE OF COMMUNICATIONS BUFFER 
-  B07F    00                            DB      0                       ;4: NO OPTIONS 
-  B080    0000                          DW      0                       ;5,6: BOTTOM OF PAGED MEM (none) 
-  B082    0000                          DW      0                       ;7,8: TOP OF PAGED MEM (none) 
-  B084    01                            DB      B1-B0                   ;9 BREAKPOINT INSTRUCTION LENGTH 
-  B085    CF                    B0:     RST     1                       ;10+ BREKAPOINT INSTRUCTION 
-  B086    4E 6F 49 43           B1:     DB     "NoICE 8080 monitor V3.1" ;DESCRIPTION, ZERO 
-  B08A    45 20 38 30           
-  B08E    38 30 20 6D           
-  B092    6F 6E 69 74           
-  B096    6F 72 20 56           
-  B09A    33 2E 31              
-  B09D    00                            DB      0 
-  0021                          TSTG_SIZE EQU   $ - TSTG                ;SIZE OF STRING 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-4
 
 
+  B09E    0E                    TSTG:   DB      14                      ;2: PROCESSOR TYPE = 8085 
+  B09F    43                            DB      COMBUF_SIZE             ;3: SIZE OF COMMUNICATIONS BUFFER 
+  B0A0    00                            DB      0                       ;4: NO OPTIONS 
+  B0A1    0000                          DW      0                       ;5,6: BOTTOM OF PAGED MEM (none) 
+  B0A3    0000                          DW      0                       ;7,8: TOP OF PAGED MEM (none) 
+  B0A5    01                            DB      B1-B0                   ;9 BREAKPOINT INSTRUCTION LENGTH 
+  B0A6    CF                    B0:     RST     1                       ;10+ BREKAPOINT INSTRUCTION 
+  B0A7    4E 6F 49 43           B1:     DB     "NoICE 8080 monitor V3.1" ;DESCRIPTION, ZERO 
+  B0AB    45 20 38 30           
+  B0AF    38 30 20 6D           
+  B0B3    6F 6E 69 74           
+  B0B7    6F 72 20 56           
+  B0BB    33 2E 31              
+  B0BE    00                            DB      0 
+  0021                          TSTG_SIZE EQU   $ - TSTG                ;SIZE OF STRING 
                                 ; 
                                 ;=========================================================================== 
                                 ;  HARDWARE PLATFORM INDEPENDENT EQUATES AND CODE 
@@ -259,132 +274,132 @@
                                 ;  Enter here via RST nn for breakpoint:  PSW, PC are stacked. 
                                 ;  Enter with A=interrupt code = processor state 
                                 ;  Interrupt status is not changed from user program 
-  B09E                          INT_ENTRY: 
-  B09E    32 B2D9                       STA     REG_STATE       ;save entry state 
+  B0BF                          INT_ENTRY: 
+  B0BF    32 B2FA                       STA     REG_STATE       ;save entry state 
                                 ; 
                                 ;  TODO: if you can read interrupt state, do it here 
-  B0A1    AF                            XRA     A               ;ALWAYS 0 IF YOU CAN'T READ THE STATE 
-  B0A2    F3                            DI                      ;NO INTERRUPTS ALLOWED HEREAFTER 
-  B0A3    32 B2E7                       STA     REG_IM          ;SAVE INT REG 
+  B0C2    AF                            XRA     A               ;ALWAYS 0 IF YOU CAN'T READ THE STATE 
+  B0C3    F3                            DI                      ;NO INTERRUPTS ALLOWED HEREAFTER 
+  B0C4    32 B308                       STA     REG_IM          ;SAVE INT REG 
                                 ; 
                                 ;  Save registers in reg block for return to master 
-  B0A6    22 B2DD                       SHLD    REG_HL          ;SAVE HL 
-  B0A9    E1                            POP     H               ;GET FLAGS IN L, ACCUM IN H 
-  B0AA    22 B2E3                       SHLD    REG_PSW         ;SAVE A AND FLAGS 
+  B0C7    22 B2FE                       SHLD    REG_HL          ;SAVE HL 
+  B0CA    E1                            POP     H               ;GET FLAGS IN L, ACCUM IN H 
+  B0CB    22 B304                       SHLD    REG_PSW         ;SAVE A AND FLAGS 
                                 ; 
                                 ;  If entry here was by breakpoint (state=1), then back up the program 
                                 ;  counter to point at the breakpoint/RST instruction.  Else leave PC alone. 
                                 ;  (If CALL is used for breakpoint, then back up by 3 bytes) 
-  B0AD    E1                            POP     H               ;GET PC OF BREAKPOINT/INTERRUPT 
-  B0AE    3A B2D9                       LDA     REG_STATE 
-  B0B1    3D                            DCR     A 
-  B0B2    C2 B0B6                       JNZ     NOTBP           ;JIF NOT A BREAKPOINT 
-  B0B5    2B                            DCX     H               ;BACK UP PC TO POINT AT BREAKPOINT 
-  B0B6    C3 B1E3               NOTBP:  JMP     ENTER_MON       ;HL POINTS AT BREAKPOINT OPCODE 
-                                ; 
-                                ;=========================================================================== 
-                                ;  Main loop:  wait for command frame from master 
-  B0B9    31 B2D9               MAIN:   LXI     SP,MONSTACK     ;CLEAN STACK IS HAPPY STACK 
-  B0BC    21 B2E8                       LXI     H,COMBUF        ;BUILD MESSAGE HERE 
-                                ; 
-                                ;  First byte is a function code 
-  B0BF    CD B04A                       CALL    GETCHAR         ;GET A FUNCTION (uses 6 bytes of stack) 
-  B0C2    DA B0B9                       JC      MAIN            ;JIF TIMEOUT: RESYNC 
-  B0C5    FE F0                         CPI     FN_MIN 
-  B0C7    DA B0B9                       JC      MAIN            ;JIF BELOW MIN: ILLEGAL FUNCTION 
-  B0CA    77                            MOV     M,A             ;SAVE FUNCTION CODE 
+  B0CE    E1                            POP     H               ;GET PC OF BREAKPOINT/INTERRUPT 
+  B0CF    3A B2FA                       LDA     REG_STATE 
+  B0D2    3D                            DCR     A 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-5
 
 
-  B0CB    23                            INX     H 
+  B0D3    C2 B0D7                       JNZ     NOTBP           ;JIF NOT A BREAKPOINT 
+  B0D6    2B                            DCX     H               ;BACK UP PC TO POINT AT BREAKPOINT 
+  B0D7    C3 B204               NOTBP:  JMP     ENTER_MON       ;HL POINTS AT BREAKPOINT OPCODE 
+                                ; 
+                                ;=========================================================================== 
+                                ;  Main loop:  wait for command frame from master 
+  B0DA    31 B2FA               MAIN:   LXI     SP,MONSTACK     ;CLEAN STACK IS HAPPY STACK 
+  B0DD    21 B309                       LXI     H,COMBUF        ;BUILD MESSAGE HERE 
+                                ; 
+                                ;  First byte is a function code 
+  B0E0    CD B04A                       CALL    GETCHAR         ;GET A FUNCTION (uses 6 bytes of stack) 
+  B0E3    DA B0DA                       JC      MAIN            ;JIF TIMEOUT: RESYNC 
+  B0E6    FE F0                         CPI     FN_MIN 
+  B0E8    DA B0DA                       JC      MAIN            ;JIF BELOW MIN: ILLEGAL FUNCTION 
+  B0EB    77                            MOV     M,A             ;SAVE FUNCTION CODE 
+  B0EC    23                            INX     H 
                                 ; 
                                 ;  Second byte is data byte count (may be zero) 
-  B0CC    CD B04A                       CALL    GETCHAR         ;GET A LENGTH BYTE 
-  B0CF    DA B0B9                       JC      MAIN            ;JIF TIMEOUT: RESYNC 
-  B0D2    FE 44                         CPI     COMBUF_SIZE+1 
-  B0D4    D2 B0B9                       JNC     MAIN            ;JIF TOO LONG: ILLEGAL LENGTH 
-  B0D7    77                            MOV     M,A             ;SAVE LENGTH 
-  B0D8    23                            INX     H 
-  B0D9    B7                            ORA     A 
-  B0DA    CA B0EA                       JZ      MA80            ;SKIP DATA LOOP IF LENGTH = 0 
+  B0ED    CD B04A                       CALL    GETCHAR         ;GET A LENGTH BYTE 
+  B0F0    DA B0DA                       JC      MAIN            ;JIF TIMEOUT: RESYNC 
+  B0F3    FE 44                         CPI     COMBUF_SIZE+1 
+  B0F5    D2 B0DA                       JNC     MAIN            ;JIF TOO LONG: ILLEGAL LENGTH 
+  B0F8    77                            MOV     M,A             ;SAVE LENGTH 
+  B0F9    23                            INX     H 
+  B0FA    B7                            ORA     A 
+  B0FB    CA B10B                       JZ      MA80            ;SKIP DATA LOOP IF LENGTH = 0 
                                 ; 
                                 ;  Loop for data 
-  B0DD    47                            MOV     B,A             ;SAVE LENGTH FOR LOOP 
-  B0DE    CD B04A               MA10:   CALL    GETCHAR         ;GET A DATA BYTE 
-  B0E1    DA B0B9                       JC      MAIN            ;JIF TIMEOUT: RESYNC 
-  B0E4    77                            MOV     M,A             ;SAVE DATA BYTE 
-  B0E5    23                            INX     H 
-  B0E6    05                            DCR     B 
-  B0E7    C2 B0DE                       JNZ     MA10 
+  B0FE    47                            MOV     B,A             ;SAVE LENGTH FOR LOOP 
+  B0FF    CD B04A               MA10:   CALL    GETCHAR         ;GET A DATA BYTE 
+  B102    DA B0DA                       JC      MAIN            ;JIF TIMEOUT: RESYNC 
+  B105    77                            MOV     M,A             ;SAVE DATA BYTE 
+  B106    23                            INX     H 
+  B107    05                            DCR     B 
+  B108    C2 B0FF                       JNZ     MA10 
                                 ; 
                                 ;  Get the checksum 
-  B0EA    CD B04A               MA80:   CALL    GETCHAR         ;GET THE CHECKSUM 
-  B0ED    DA B0B9                       JC      MAIN            ;JIF TIMEOUT: RESYNC 
-  B0F0    4F                            MOV     C,A             ;SAVE CHECKSUM 
+  B10B    CD B04A               MA80:   CALL    GETCHAR         ;GET THE CHECKSUM 
+  B10E    DA B0DA                       JC      MAIN            ;JIF TIMEOUT: RESYNC 
+  B111    4F                            MOV     C,A             ;SAVE CHECKSUM 
                                 ; 
                                 ;  Compare received checksum to that calculated on received buffer 
                                 ;  (Sum should be 0) 
-  B0F1    CD B278                       CALL    CHECKSUM 
-  B0F4    81                            ADD     C 
-  B0F5    C2 B0B9                       JNZ     MAIN            ;JIF BAD CHECKSUM 
+  B112    CD B299                       CALL    CHECKSUM 
+  B115    81                            ADD     C 
+  B116    C2 B0DA                       JNZ     MAIN            ;JIF BAD CHECKSUM 
                                 ; 
                                 ;  Process the message. 
-  B0F8    3A B2E8                       LDA     COMBUF+0        ;GET THE FUNCTION CODE 
-  B0FB    FE FF                         CPI     FN_GET_STATUS 
-  B0FD    CA B132                       JZ      TARGET_STATUS 
-  B100    FE FE                         CPI     FN_READ_MEM 
-  B102    CA B148                       JZ      READ_MEM 
-  B105    FE FD                         CPI     FN_WRITE_MEM 
-  B107    CA B163                       JZ      WRITE_MEM 
-  B10A    FE FC                         CPI     FN_READ_REGS 
-  B10C    CA B198                       JZ      READ_REGS 
-  B10F    FE FB                         CPI     FN_WRITE_REGS 
-  B111    CA B1AE                       JZ      WRITE_REGS 
-  B114    FE FA                         CPI     FN_RUN_TARGET 
-  B116    CA B1C8                       JZ      RUN_TARGET 
-  B119    FE F9                         CPI     FN_SET_BYTES 
-  B11B    CA B201                       JZ      SET_BYTES 
-  B11E    FE F8                         CPI     FN_IN 
-  B120    CA B231                       JZ      IN_PORT 
-  B123    FE F7                         CPI     FN_OUT 
-  B125    CA B241                       JZ      OUT_PORT 
-                                ; 
-                                ;  Error: unknown function.  Complain 
-  B128    3E F0                         MVI     A,FN_ERROR 
-  B12A    32 B2E8                       STA     COMBUF+0        ;SET FUNCTION AS "ERROR" 
+  B119    3A B309                       LDA     COMBUF+0        ;GET THE FUNCTION CODE 
+  B11C    FE FF                         CPI     FN_GET_STATUS 
+  B11E    CA B153                       JZ      TARGET_STATUS 
+  B121    FE FE                         CPI     FN_READ_MEM 
+  B123    CA B169                       JZ      READ_MEM 
+  B126    FE FD                         CPI     FN_WRITE_MEM 
+  B128    CA B184                       JZ      WRITE_MEM 
+  B12B    FE FC                         CPI     FN_READ_REGS 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-6
 
 
-  B12D    3E 01                         MVI     A,1 
-  B12F    C3 B255                       JMP     SEND_STATUS     ;VALUE IS "ERROR" 
+  B12D    CA B1B9                       JZ      READ_REGS 
+  B130    FE FB                         CPI     FN_WRITE_REGS 
+  B132    CA B1CF                       JZ      WRITE_REGS 
+  B135    FE FA                         CPI     FN_RUN_TARGET 
+  B137    CA B1E9                       JZ      RUN_TARGET 
+  B13A    FE F9                         CPI     FN_SET_BYTES 
+  B13C    CA B222                       JZ      SET_BYTES 
+  B13F    FE F8                         CPI     FN_IN 
+  B141    CA B252                       JZ      IN_PORT 
+  B144    FE F7                         CPI     FN_OUT 
+  B146    CA B262                       JZ      OUT_PORT 
+                                ; 
+                                ;  Error: unknown function.  Complain 
+  B149    3E F0                         MVI     A,FN_ERROR 
+  B14B    32 B309                       STA     COMBUF+0        ;SET FUNCTION AS "ERROR" 
+  B14E    3E 01                         MVI     A,1 
+  B150    C3 B276                       JMP     SEND_STATUS     ;VALUE IS "ERROR" 
                                  
                                 ;=========================================================================== 
                                 ; 
                                 ;  Target Status:  FN, len 
                                 ; 
-  B132                          TARGET_STATUS: 
+  B153                          TARGET_STATUS: 
                                 ; 
-  B132    21 B07D                       LXI     H,TSTG          ;DATA FOR REPLY 
-  B135    11 B2E9                       LXI     D,COMBUF+1      ;RETURN BUFFER 
-  B138    06 21                         MVI     B,TSTG_SIZE     ;LENGTH OF REPLY 
-  B13A    78                            MOV     A,B 
-  B13B    12                            STAX    D               ;SET SIZE IN REPLY BUFFER 
-  B13C    13                            INX     D 
-  B13D    7E                    TS10:   MOV     A,M             ;MOVE REPLY DATA TO BUFFER 
-  B13E    12                            STAX    D 
-  B13F    23                            INX     H 
-  B140    13                            INX     D 
-  B141    05                            DCR     B 
-  B142    C2 B13D                       JNZ     TS10 
+  B153    21 B09E                       LXI     H,TSTG          ;DATA FOR REPLY 
+  B156    11 B30A                       LXI     D,COMBUF+1      ;RETURN BUFFER 
+  B159    06 21                         MVI     B,TSTG_SIZE     ;LENGTH OF REPLY 
+  B15B    78                            MOV     A,B 
+  B15C    12                            STAX    D               ;SET SIZE IN REPLY BUFFER 
+  B15D    13                            INX     D 
+  B15E    7E                    TS10:   MOV     A,M             ;MOVE REPLY DATA TO BUFFER 
+  B15F    12                            STAX    D 
+  B160    23                            INX     H 
+  B161    13                            INX     D 
+  B162    05                            DCR     B 
+  B163    C2 B15E                       JNZ     TS10 
                                 ; 
                                 ;  Compute checksum on buffer, and send to master, then return 
-  B145    C3 B25D                       JMP     SEND 
+  B166    C3 B27E                       JMP     SEND 
                                  
                                 ;=========================================================================== 
                                 ; 
                                 ;  Read Memory:  FN, len, page, Alo, Ahi, Nbytes 
                                 ; 
-  B148                          READ_MEM: 
+  B169                          READ_MEM: 
                                 ; 
                                 ;  Set page 
                                 ;;      LDA     COMBUF+2 
@@ -392,30 +407,30 @@
                                 ;;      OUT     PAGELATCH 
                                 ; 
                                 ;  Get address 
-  B148    2A B2EB                       LHLD    COMBUF+3 
-  B14B    3A B2ED                       LDA     COMBUF+5                ;NUMBER OF BYTES TO GET 
+  B169    2A B30C                       LHLD    COMBUF+3 
+  B16C    3A B30E                       LDA     COMBUF+5                ;NUMBER OF BYTES TO GET 
                                 ; 
                                 ;  Prepare return buffer: FN (unchanged), LEN, DATA 
-  B14E    11 B2E9                       LXI     D,COMBUF+1              ;POINTER TO LEN, DATA 
-  B151    12                            STAX    D                       ;RETURN LENGTH = REQUESTED DATA 
-  B152    13                            INX     D 
-  B153    B7                            ORA     A 
-  B154    CA B160                       JZ      GLP90                   ;JIF NO BYTES TO GET 
-                                ; 
-                                ;  Read the requested bytes from local memory 
-  B157    47                            MOV     B,A 
-  B158    7E                    GLP:    MOV     A,M             ;GET BYTE TO A 
-  B159    12                            STAX    D               ;STORE TO RETURN BUFFER 
-  B15A    23                            INX     H 
-  B15B    13                            INX     D 
-  B15C    05                            DCR     B 
-  B15D    C2 B158                       JNZ     GLP 
-                                ; 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-7
 
 
+  B16F    11 B30A                       LXI     D,COMBUF+1              ;POINTER TO LEN, DATA 
+  B172    12                            STAX    D                       ;RETURN LENGTH = REQUESTED DATA 
+  B173    13                            INX     D 
+  B174    B7                            ORA     A 
+  B175    CA B181                       JZ      GLP90                   ;JIF NO BYTES TO GET 
+                                ; 
+                                ;  Read the requested bytes from local memory 
+  B178    47                            MOV     B,A 
+  B179    7E                    GLP:    MOV     A,M             ;GET BYTE TO A 
+  B17A    12                            STAX    D               ;STORE TO RETURN BUFFER 
+  B17B    23                            INX     H 
+  B17C    13                            INX     D 
+  B17D    05                            DCR     B 
+  B17E    C2 B179                       JNZ     GLP 
+                                ; 
                                 ;  Compute checksum on buffer, and send to master, then return 
-  B160    C3 B25D               GLP90:  JMP     SEND 
+  B181    C3 B27E               GLP90:  JMP     SEND 
                                  
                                 ;=========================================================================== 
                                 ; 
@@ -423,7 +438,7 @@
                                 ; 
                                 ;  Uses 2 bytes of stack 
                                 ; 
-  B163                          WRITE_MEM: 
+  B184                          WRITE_MEM: 
                                 ; 
                                 ;  Set page 
                                 ;;      LDA     COMBUF+2 
@@ -431,107 +446,107 @@
                                 ;;      OUT     PAGELATCH 
                                 ; 
                                 ;  Get address 
-  B163    11 B2ED                       LXI     D,COMBUF+5      ;POINTER TO SOURCE DATA IN MESSAGE 
-  B166    2A B2EB                       LHLD    COMBUF+3        ;POINTER TO DESTINATION 
-  B169    EB                            XCHG 
+  B184    11 B30E                       LXI     D,COMBUF+5      ;POINTER TO SOURCE DATA IN MESSAGE 
+  B187    2A B30C                       LHLD    COMBUF+3        ;POINTER TO DESTINATION 
+  B18A    EB                            XCHG 
                                 ; 
-  B16A    3A B2E9                       LDA     COMBUF+1        ;NUMBER OF BYTES IN MESSAGE 
-  B16D    DE 03                         SBI     3               ;LESS PAGE, ADDRLO, ADDRHI 
-  B16F    CA B18F                       JZ      WLP50           ;EXIT IF NONE REQUESTED 
+  B18B    3A B30A                       LDA     COMBUF+1        ;NUMBER OF BYTES IN MESSAGE 
+  B18E    DE 03                         SBI     3               ;LESS PAGE, ADDRLO, ADDRHI 
+  B190    CA B1B0                       JZ      WLP50           ;EXIT IF NONE REQUESTED 
                                 ; 
                                 ;  Write the specified bytes to local memory 
-  B172    47                            MOV     B,A 
-  B173    C5                            PUSH    B               ;SAVE BYTE COUNTER 
-  B174    7E                    WLP10:  MOV     A,M             ;BYTE FROM HOST 
-  B175    12                            STAX    D               ;WRITE TO TARGET RAM 
-  B176    23                            INX     H 
-  B177    13                            INX     D 
-  B178    05                            DCR     B 
-  B179    C2 B174                       JNZ     WLP10 
+  B193    47                            MOV     B,A 
+  B194    C5                            PUSH    B               ;SAVE BYTE COUNTER 
+  B195    7E                    WLP10:  MOV     A,M             ;BYTE FROM HOST 
+  B196    12                            STAX    D               ;WRITE TO TARGET RAM 
+  B197    23                            INX     H 
+  B198    13                            INX     D 
+  B199    05                            DCR     B 
+  B19A    C2 B195                       JNZ     WLP10 
                                 ; 
                                 ;  Compare to see if the write worked 
-  B17C    11 B2ED                       LXI     D,COMBUF+5      ;POINTER TO SOURCE DATA IN MESSAGE 
-  B17F    2A B2EB                       LHLD    COMBUF+3        ;POINTER TO DESTINATION 
-  B182    EB                            XCHG 
-  B183    C1                            POP     B               ;SIZE AGAIN 
+  B19D    11 B30E                       LXI     D,COMBUF+5      ;POINTER TO SOURCE DATA IN MESSAGE 
+  B1A0    2A B30C                       LHLD    COMBUF+3        ;POINTER TO DESTINATION 
+  B1A3    EB                            XCHG 
+  B1A4    C1                            POP     B               ;SIZE AGAIN 
                                 ; 
-                                ;  Compare the specified bytes to local memory 
-  B184    1A                    WLP20:  LDAX    D               ;READ BACK WHAT WE WROTE 
-  B185    BE                            CMP     M               ;COMPARE TO HOST DATA 
-  B186    C2 B193                       JNZ     WLP80           ;JIF WRITE FAILED 
-  B189    23                            INX     H 
-  B18A    13                            INX     D 
-  B18B    05                            DCR     B 
-  B18C    C2 B184                       JNZ     WLP20 
-                                ; 
-                                ;  Write succeeded:  return status = 0 
-  B18F    AF                    WLP50:  XRA     A               ;RETURN STATUS = 0 
-  B190    C3 B195                       JMP     WLP90 
-                                ; 
-                                ;  Write failed:  return status = 1 
-  B193    3E 01                 WLP80:  MVI      A,1 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-8
 
 
+                                ;  Compare the specified bytes to local memory 
+  B1A5    1A                    WLP20:  LDAX    D               ;READ BACK WHAT WE WROTE 
+  B1A6    BE                            CMP     M               ;COMPARE TO HOST DATA 
+  B1A7    C2 B1B4                       JNZ     WLP80           ;JIF WRITE FAILED 
+  B1AA    23                            INX     H 
+  B1AB    13                            INX     D 
+  B1AC    05                            DCR     B 
+  B1AD    C2 B1A5                       JNZ     WLP20 
+                                ; 
+                                ;  Write succeeded:  return status = 0 
+  B1B0    AF                    WLP50:  XRA     A               ;RETURN STATUS = 0 
+  B1B1    C3 B1B6                       JMP     WLP90 
+                                ; 
+                                ;  Write failed:  return status = 1 
+  B1B4    3E 01                 WLP80:  MVI      A,1 
                                 ; 
                                 ;  Return OK status 
-  B195    C3 B255               WLP90:  JMP     SEND_STATUS 
+  B1B6    C3 B276               WLP90:  JMP     SEND_STATUS 
                                  
                                 ;=========================================================================== 
                                 ; 
                                 ;  Read registers:  FN, len=0 
                                 ; 
-  B198                          READ_REGS: 
+  B1B9                          READ_REGS: 
                                 ; 
                                 ;  Enter here from int after "RUN" and "STEP" to return task registers 
-  B198                          RETURN_REGS: 
-  B198    21 B2D9                       LXI     H,TASK_REGS     ;REGISTER LIVE HERE 
-  B19B    3E 0F                         MVI     A,T_REGS_SIZE   ;NUMBER OF BYTES 
+  B1B9                          RETURN_REGS: 
+  B1B9    21 B2FA                       LXI     H,TASK_REGS     ;REGISTER LIVE HERE 
+  B1BC    3E 0F                         MVI     A,T_REGS_SIZE   ;NUMBER OF BYTES 
                                 ; 
                                 ;  Prepare return buffer: FN (unchanged), LEN, DATA 
-  B19D    11 B2E9                       LXI     D,COMBUF+1      ;POINTER TO LEN, DATA 
-  B1A0    12                            STAX    D               ;SAVE DATA LENGTH 
-  B1A1    13                            INX     D 
+  B1BE    11 B30A                       LXI     D,COMBUF+1      ;POINTER TO LEN, DATA 
+  B1C1    12                            STAX    D               ;SAVE DATA LENGTH 
+  B1C2    13                            INX     D 
                                 ; 
                                 ;  Copy the registers 
-  B1A2    47                            MOV     B,A 
-  B1A3    7E                    GRLP:   MOV     A,M             ;GET BYTE TO A 
-  B1A4    12                            STAX    D               ;STORE TO RETURN BUFFER 
-  B1A5    23                            INX     H 
-  B1A6    13                            INX     D 
-  B1A7    05                            DCR     B 
-  B1A8    C2 B1A3                       JNZ     GRLP 
+  B1C3    47                            MOV     B,A 
+  B1C4    7E                    GRLP:   MOV     A,M             ;GET BYTE TO A 
+  B1C5    12                            STAX    D               ;STORE TO RETURN BUFFER 
+  B1C6    23                            INX     H 
+  B1C7    13                            INX     D 
+  B1C8    05                            DCR     B 
+  B1C9    C2 B1C4                       JNZ     GRLP 
                                 ; 
                                 ;  Compute checksum on buffer, and send to master, then return 
-  B1AB    C3 B25D                       JMP     SEND 
+  B1CC    C3 B27E                       JMP     SEND 
                                  
                                 ;=========================================================================== 
                                 ; 
                                 ;  Write registers:  FN, len, (register image) 
                                 ; 
-  B1AE                          WRITE_REGS: 
+  B1CF                          WRITE_REGS: 
                                 ; 
-  B1AE    21 B2EA                       LXI     H,COMBUF+2      ;POINTER TO DATA 
-  B1B1    3A B2E9                       LDA     COMBUF+1        ;NUMBER OF BYTES 
-  B1B4    B7                            ORA     A 
-  B1B5    CA B1C4                       JZ      WRR80           ;JIF NO REGISTERS 
-                                ; 
-                                ;  Copy the registers 
-  B1B8    11 B2D9                       LXI     D,TASK_REGS     ;OUR REGISTERS LIVE HERE 
-  B1BB    47                            MOV     B,A 
-  B1BC    7E                    WRRLP:  MOV     A,M             ;GET BYTE TO A 
-  B1BD    12                            STAX    D               ;STORE TO REGISTER RAM 
-  B1BE    23                            INX     H 
-  B1BF    13                            INX     D 
-  B1C0    05                            DCR     B 
-  B1C1    C2 B1BC                       JNZ     WRRLP 
-                                ; 
-                                ;  Return OK status 
-  B1C4    AF                    WRR80:  XRA     A 
-  B1C5    C3 B255                       JMP     SEND_STATUS 
+  B1CF    21 B30B                       LXI     H,COMBUF+2      ;POINTER TO DATA 
+  B1D2    3A B30A                       LDA     COMBUF+1        ;NUMBER OF BYTES 
+  B1D5    B7                            ORA     A 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-9
 
 
+  B1D6    CA B1E5                       JZ      WRR80           ;JIF NO REGISTERS 
+                                ; 
+                                ;  Copy the registers 
+  B1D9    11 B2FA                       LXI     D,TASK_REGS     ;OUR REGISTERS LIVE HERE 
+  B1DC    47                            MOV     B,A 
+  B1DD    7E                    WRRLP:  MOV     A,M             ;GET BYTE TO A 
+  B1DE    12                            STAX    D               ;STORE TO REGISTER RAM 
+  B1DF    23                            INX     H 
+  B1E0    13                            INX     D 
+  B1E1    05                            DCR     B 
+  B1E2    C2 B1DD                       JNZ     WRRLP 
+                                ; 
+                                ;  Return OK status 
+  B1E5    AF                    WRR80:  XRA     A 
+  B1E6    C3 B276                       JMP     SEND_STATUS 
                                  
                                 ;=========================================================================== 
                                 ; 
@@ -539,7 +554,7 @@
                                 ; 
                                 ;  Uses 4 bytes of stack 
                                 ; 
-  B1C8                          RUN_TARGET: 
+  B1E9                          RUN_TARGET: 
                                 ; 
                                 ;  Restore user's page 
                                 ;;      LDA     REG_PAGE 
@@ -547,22 +562,22 @@
                                 ;;      OUT     PAGELATCH 
                                 ; 
                                 ;  Switch to user stack 
-  B1C8    2A B2DB                       LHLD    REG_SP          ;BACK TO USER STACK 
-  B1CB    F9                            SPHL 
+  B1E9    2A B2FC                       LHLD    REG_SP          ;BACK TO USER STACK 
+  B1EC    F9                            SPHL 
                                  
-  B1CC    2A B2E5                       LHLD    REG_PC          ;USER PC 
-  B1CF    E5                            PUSH    H               ;SAVE USER PC FOR RET 
-  B1D0    2A B2E3                       LHLD    REG_PSW 
-  B1D3    E5                            PUSH    H               ;SAVE USER A AND FLAGS FOR POP 
+  B1ED    2A B306                       LHLD    REG_PC          ;USER PC 
+  B1F0    E5                            PUSH    H               ;SAVE USER PC FOR RET 
+  B1F1    2A B304                       LHLD    REG_PSW 
+  B1F4    E5                            PUSH    H               ;SAVE USER A AND FLAGS FOR POP 
                                 ; 
                                 ;  Restore registers 
-  B1D4    2A B2DF                       LHLD    REG_BC 
-  B1D7    44                            MOV     B,H 
-  B1D8    4D                            MOV     C,L 
-  B1D9    2A B2E1                       LHLD    REG_DE 
-  B1DC    54                            MOV     D,H 
-  B1DD    5D                            MOV     E,L 
-  B1DE    2A B2DD                       LHLD    REG_HL 
+  B1F5    2A B300                       LHLD    REG_BC 
+  B1F8    44                            MOV     B,H 
+  B1F9    4D                            MOV     C,L 
+  B1FA    2A B302                       LHLD    REG_DE 
+  B1FD    54                            MOV     D,H 
+  B1FE    5D                            MOV     E,L 
+  B1FF    2A B2FE                       LHLD    REG_HL 
                                 ; 
                                 ;  TODO: if you read interrupt enable state at INT_ENTRY, use the value in REG_IM 
                                 ;  to restore the state before RET 
@@ -573,11 +588,14 @@
                                 ;  Return to user with interrupts enabled 
                                 ;        POP     PSW 
                                 ;        EI                     ;ENABLES AFTER NEXT INSTRUCTION 
+	MACRO-80 3.44	09-Dec-81	PAGE	1-10
+
+
                                 ;        RET 
                                 ; 
                                 ;  Return to user with interrupts disabled 
-  B1E1    F1                    RUTT10: POP     PSW 
-  B1E2    C9                            RET 
+  B202    F1                    RUTT10: POP     PSW 
+  B203    C9                            RET 
                                  
                                 ;=========================================================================== 
                                 ; 
@@ -587,29 +605,26 @@
                                 ; 
                                 ;  Uses 2 bytes of stack 
                                 ; 
-  B1E3                          ENTER_MON: 
-	MACRO-80 3.44	09-Dec-81	PAGE	1-10
-
-
-  B1E3    22 B2E5                       SHLD    REG_PC 
-  B1E6    21 0000                       LXI     H,0 
-  B1E9    39                            DAD     SP 
-  B1EA    22 B2DB                       SHLD    REG_SP          ;SAVE USER'S STACK POINTER 
-  B1ED    31 B2D9                       LXI     SP,MONSTACK     ;AND USE OURS INSTEAD 
+  B204                          ENTER_MON: 
+  B204    22 B306                       SHLD    REG_PC 
+  B207    21 0000                       LXI     H,0 
+  B20A    39                            DAD     SP 
+  B20B    22 B2FC                       SHLD    REG_SP          ;SAVE USER'S STACK POINTER 
+  B20E    31 B2FA                       LXI     SP,MONSTACK     ;AND USE OURS INSTEAD 
                                 ; 
-  B1F0    60                            MOV     H,B 
-  B1F1    69                            MOV     L,C 
-  B1F2    22 B2DF                       SHLD    REG_BC 
-  B1F5    62                            MOV     H,D 
-  B1F6    6B                            MOV     L,E 
-  B1F7    22 B2E1                       SHLD    REG_DE 
+  B211    60                            MOV     H,B 
+  B212    69                            MOV     L,C 
+  B213    22 B300                       SHLD    REG_BC 
+  B216    62                            MOV     H,D 
+  B217    6B                            MOV     L,E 
+  B218    22 B302                       SHLD    REG_DE 
                                 ; 
                                 ;;      LDA     PAGEIMAGE       ;GET CURRENT USER PAGE 
-  B1FA    AF                            XRA     A               ;...OR NONE IF UNPAGED TARGET 
-  B1FB    32 B2DA                       STA     REG_PAGE        ;SAVE USER PAGE 
+  B21B    AF                            XRA     A               ;...OR NONE IF UNPAGED TARGET 
+  B21C    32 B2FB                       STA     REG_PAGE        ;SAVE USER PAGE 
                                 ; 
                                 ;  Return registers to master 
-  B1FE    C3 B198                       JMP     RETURN_REGS 
+  B21F    C3 B1B9                       JMP     RETURN_REGS 
                                  
                                 ;=========================================================================== 
                                 ; 
@@ -623,113 +638,113 @@
                                 ; 
                                 ;  Uses 2 bytes of stack 
                                 ; 
-  B201                          SET_BYTES: 
+  B222                          SET_BYTES: 
                                 ; 
-  B201    21 B2E9                       LXI     H,COMBUF+1 
-  B204    46                            MOV     B,M             ;LENGTH = 4*NBYTES 
-  B205    23                            INX     H 
-  B206    04                            INR     B 
-  B207    05                            DCR     B 
-  B208    0E 00                         MVI     C,0             ;C GETS COUNT OF INSERTED BYTES 
-  B20A    CA B229                       JZ      SB90            ;JIF NO BYTES (C=0) 
-  B20D    E5                            PUSH    H               ;RETURN BUFFER 
-                                ; 
-                                ;  Loop on inserting bytes 
-  B20E    7E                    SB10:   MOV     A,M             ;MEMORY PAGE 
-  B20F    23                            INX     H 
-                                ;;      STA     PAGEIMAGE 
-                                ;;      OUT     PAGELATCH       ;SET PAGE 
-  B210    5E                            MOV     E,M             ;ADDRESS TO DE 
-  B211    23                            INX     H 
-  B212    56                            MOV     D,M 
-  B213    23                            INX     H 
-                                ; 
-                                ;  Read current data at byte location 
-  B214    1A                            LDAX    D               ;READ CURRENT DATA 
-  B215    E3                            XTHL 
+  B222    21 B30A                       LXI     H,COMBUF+1 
+  B225    46                            MOV     B,M             ;LENGTH = 4*NBYTES 
+  B226    23                            INX     H 
+  B227    04                            INR     B 
+  B228    05                            DCR     B 
+  B229    0E 00                         MVI     C,0             ;C GETS COUNT OF INSERTED BYTES 
+  B22B    CA B24A                       JZ      SB90            ;JIF NO BYTES (C=0) 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-11
 
 
-  B216    77                            MOV     M,A             ;SAVE IN RETURN BUFFER 
-  B217    23                            INX     H 
-  B218    E3                            XTHL 
+  B22E    E5                            PUSH    H               ;RETURN BUFFER 
+                                ; 
+                                ;  Loop on inserting bytes 
+  B22F    7E                    SB10:   MOV     A,M             ;MEMORY PAGE 
+  B230    23                            INX     H 
+                                ;;      STA     PAGEIMAGE 
+                                ;;      OUT     PAGELATCH       ;SET PAGE 
+  B231    5E                            MOV     E,M             ;ADDRESS TO DE 
+  B232    23                            INX     H 
+  B233    56                            MOV     D,M 
+  B234    23                            INX     H 
+                                ; 
+                                ;  Read current data at byte location 
+  B235    1A                            LDAX    D               ;READ CURRENT DATA 
+  B236    E3                            XTHL 
+  B237    77                            MOV     M,A             ;SAVE IN RETURN BUFFER 
+  B238    23                            INX     H 
+  B239    E3                            XTHL 
                                 ; 
                                 ;  Insert new data at byte location 
-  B219    7E                            MOV     A,M 
-  B21A    12                            STAX    D               ;SET BYTE 
-  B21B    1A                            LDAX    D               ;READ IT BACK 
-  B21C    BE                            CMP     M               ;COMPARE TO DESIRED VALUE 
-  B21D    C2 B229                       JNZ     SB90            ;BR IF INSERT FAILED: ABORT 
-  B220    23                            INX     H 
-  B221    0C                            INR     C               ;ELSE COUNT ONE BYTE TO RETURN 
+  B23A    7E                            MOV     A,M 
+  B23B    12                            STAX    D               ;SET BYTE 
+  B23C    1A                            LDAX    D               ;READ IT BACK 
+  B23D    BE                            CMP     M               ;COMPARE TO DESIRED VALUE 
+  B23E    C2 B24A                       JNZ     SB90            ;BR IF INSERT FAILED: ABORT 
+  B241    23                            INX     H 
+  B242    0C                            INR     C               ;ELSE COUNT ONE BYTE TO RETURN 
                                 ; 
-  B222    05                            DCR     B 
-  B223    05                            DCR     B 
-  B224    05                            DCR     B 
-  B225    05                            DCR     B 
-  B226    C2 B20E                       JNZ     SB10            ;LOOP FOR ALL BYTES 
+  B243    05                            DCR     B 
+  B244    05                            DCR     B 
+  B245    05                            DCR     B 
+  B246    05                            DCR     B 
+  B247    C2 B22F                       JNZ     SB10            ;LOOP FOR ALL BYTES 
                                 ; 
                                 ;  Return buffer with data from byte locations 
-  B229    79                    SB90:   MOV     A,C 
-  B22A    32 B2E9                       STA     COMBUF+1        ;SET COUNT OF RETURN BYTES 
-  B22D    E1                            POP     H               ;CLEAN STACK 
+  B24A    79                    SB90:   MOV     A,C 
+  B24B    32 B30A                       STA     COMBUF+1        ;SET COUNT OF RETURN BYTES 
+  B24E    E1                            POP     H               ;CLEAN STACK 
                                 ; 
                                 ;  Compute checksum on buffer, and send to master, then return 
-  B22E    C3 B25D                       JMP     SEND 
+  B24F    C3 B27E                       JMP     SEND 
                                  
                                 ;=========================================================================== 
                                 ; 
                                 ;  Input from port:  FN, len, PortAddressLo, PAhi (=0) 
                                 ; 
-  B231                          IN_PORT: 
+  B252                          IN_PORT: 
                                 ; 
                                 ;  Port address is at COMBUF+2 (and unused high address+3) 
                                 ;  Build "IN PORT" and "RET" around it. 
-  B231    3E DB                         MVI     A,OP_IN 
-  B233    32 B2E9                       STA     COMBUF+1 
-  B236    3E C9                         MVI     A,OP_RET 
-  B238    32 B2EB                       STA     COMBUF+3 
+  B252    3E DB                         MVI     A,OP_IN 
+  B254    32 B30A                       STA     COMBUF+1 
+  B257    3E C9                         MVI     A,OP_RET 
+  B259    32 B30C                       STA     COMBUF+3 
                                 ; 
                                 ;  Read port value 
-  B23B    CD B2E9                       CALL    COMBUF+1 
+	MACRO-80 3.44	09-Dec-81	PAGE	1-12
+
+
+  B25C    CD B30A                       CALL    COMBUF+1 
                                 ; 
                                 ;  Return byte read as "status" 
-  B23E    C3 B255                       JMP     SEND_STATUS 
+  B25F    C3 B276                       JMP     SEND_STATUS 
                                  
                                 ;=========================================================================== 
                                 ; 
                                 ;  Output to port:  FN, len, PortAddressLo, PAhi (=0), data 
                                 ; 
-  B241                          OUT_PORT: 
+  B262                          OUT_PORT: 
                                 ; 
                                 ;  Port address is at COMBUF+2, (unused high address+3) 
                                 ;  Data to write is at COMBUF+4 
                                 ;  Build "OUT PORT" and "RET" in combuffer 
-  B241    3E D3                         MVI     A,OP_OUT 
-	MACRO-80 3.44	09-Dec-81	PAGE	1-12
-
-
-  B243    32 B2E9                       STA     COMBUF+1 
-  B246    3E C9                         MVI     A,OP_RET 
-  B248    32 B2EB                       STA     COMBUF+3 
+  B262    3E D3                         MVI     A,OP_OUT 
+  B264    32 B30A                       STA     COMBUF+1 
+  B267    3E C9                         MVI     A,OP_RET 
+  B269    32 B30C                       STA     COMBUF+3 
                                 ; 
                                 ;  Get data 
-  B24B    3A B2EC                       LDA     COMBUF+4 
+  B26C    3A B30D                       LDA     COMBUF+4 
                                 ; 
                                 ;  Write value to port 
-  B24E    CD B2E9                       CALL    COMBUF+1 
+  B26F    CD B30A                       CALL    COMBUF+1 
                                 ; 
                                 ;  Return status of OK 
-  B251    AF                            XRA     A 
-  B252    C3 B255                       JMP     SEND_STATUS 
+  B272    AF                            XRA     A 
+  B273    C3 B276                       JMP     SEND_STATUS 
                                 ; 
                                 ;=========================================================================== 
                                 ;  Build status return with value from "A" 
                                 ; 
-  B255                          SEND_STATUS: 
-  B255    32 B2EA                       STA     COMBUF+2        ;SET STATUS 
-  B258    3E 01                         MVI     A,1 
-  B25A    32 B2E9                       STA     COMBUF+1        ;SET LENGTH 
+  B276                          SEND_STATUS: 
+  B276    32 B30B                       STA     COMBUF+2        ;SET STATUS 
+  B279    3E 01                         MVI     A,1 
+  B27B    32 B30A                       STA     COMBUF+1        ;SET LENGTH 
                                 ;;;     JMP     SEND 
                                  
                                 ;=========================================================================== 
@@ -737,22 +752,25 @@
                                 ; 
                                 ;  Uses 6 bytes of stack (not including return address: jumped, not called) 
                                 ; 
-  B25D    CD B278               SEND:   CALL    CHECKSUM        ;GET A=CHECKSUM, HL->checksum location 
-  B260    2F                            CMA 
-  B261    3C                            INR     A 
-  B262    77                            MOV     M,A             ;STORE NEGATIVE OF CHECKSUM 
+  B27E    CD B299               SEND:   CALL    CHECKSUM        ;GET A=CHECKSUM, HL->checksum location 
+  B281    2F                            CMA 
+  B282    3C                            INR     A 
+  B283    77                            MOV     M,A             ;STORE NEGATIVE OF CHECKSUM 
                                 ; 
                                 ;  Send buffer to master 
-  B263    21 B2E8                       LXI     H,COMBUF        ;POINTER TO DATA 
-  B266    3A B2E9                       LDA     COMBUF+1        ;LENGTH OF DATA 
-  B269    C6 03                         ADI     3               ;PLUS FUNCTION, LENGTH, CHECKSUM 
-  B26B    47                            MOV     B,A             ;save count for loop 
-  B26C    7E                    SND10:  MOV     A,M 
-  B26D    CD B06A                       CALL    PUTCHAR         ;SEND A BYTE (uses 6 bytes of stack) 
-  B270    23                            INX     H 
-  B271    05                            DCR     B 
-  B272    C2 B26C                       JNZ     SND10 
-  B275    C3 B0B9                       JMP     MAIN            ;BACK TO MAIN LOOP 
+  B284    21 B309                       LXI     H,COMBUF        ;POINTER TO DATA 
+  B287    3A B30A                       LDA     COMBUF+1        ;LENGTH OF DATA 
+  B28A    C6 03                         ADI     3               ;PLUS FUNCTION, LENGTH, CHECKSUM 
+  B28C    47                            MOV     B,A             ;save count for loop 
+  B28D    7E                    SND10:  MOV     A,M 
+  B28E    CD B07A                       CALL    PUTCHAR         ;SEND A BYTE (uses 6 bytes of stack) 
+  B291    23                            INX     H 
+	MACRO-80 3.44	09-Dec-81	PAGE	1-13
+
+
+  B292    05                            DCR     B 
+  B293    C2 B28D                       JNZ     SND10 
+  B296    C3 B0DA                       JMP     MAIN            ;BACK TO MAIN LOOP 
                                  
                                 ;=========================================================================== 
                                 ;  Compute checksum on COMBUF.  COMBUF+1 has length of data, 
@@ -765,20 +783,17 @@
                                 ; 
                                 ;  Uses 2 bytes of stack including return address 
                                 ; 
-	MACRO-80 3.44	09-Dec-81	PAGE	1-13
-
-
-  B278                          CHECKSUM: 
-  B278    21 B2E8                       LXI     H,COMBUF        ;pointer to buffer 
-  B27B    3A B2E9                       LDA     COMBUF+1        ;length of message 
-  B27E    C6 02                         ADI     2               ;plus function, length 
-  B280    47                            MOV     B,A             ;save count for loop 
-  B281    AF                            XRA     A               ;init checksum to 0 
-  B282    86                    CHK10:  ADD     M 
-  B283    23                            INX     H 
-  B284    05                            DCR     B 
-  B285    C2 B282                       JNZ     CHK10           ;loop for all 
-  B288    C9                            RET                     ;return with checksum in A 
+  B299                          CHECKSUM: 
+  B299    21 B309                       LXI     H,COMBUF        ;pointer to buffer 
+  B29C    3A B30A                       LDA     COMBUF+1        ;length of message 
+  B29F    C6 02                         ADI     2               ;plus function, length 
+  B2A1    47                            MOV     B,A             ;save count for loop 
+  B2A2    AF                            XRA     A               ;init checksum to 0 
+  B2A3    86                    CHK10:  ADD     M 
+  B2A4    23                            INX     H 
+  B2A5    05                            DCR     B 
+  B2A6    C2 B2A3                       JNZ     CHK10           ;loop for all 
+  B2A9    C9                            RET                     ;return with checksum in A 
                                  
                                 ;============================================================================ 
                                 ;  RAM definitions:  top 1K (or less) 
@@ -787,37 +802,40 @@
                                 ; 
                                 ;  Initial user stack 
                                 ;  (Size and location is user option) 
-  B289                                  DS     64 
-  B2C9                          INITSTACK: 
+  B2AA                                  DS     64 
+  B2EA                          INITSTACK: 
                                 ; 
                                 ;  Monitor stack 
                                 ;  (Calculated use is at most 6 bytes.  Leave plenty of spare) 
-  B2C9                                  DS     16 
-  B2D9                          MONSTACK: 
+  B2EA                                  DS     16 
+  B2FA                          MONSTACK: 
                                 ; 
                                 ;  Target registers:  order must match that in TRG8085.C 
-  B2D9                          TASK_REGS: 
-  B2D9                          REG_STATE:     DS     1 
-  B2DA                          REG_PAGE:      DS     1 
-  B2DB                          REG_SP:        DS     2 
-  B2DD                          REG_HL:        DS     2 
-  B2DF                          REG_BC:        DS     2 
-  B2E1                          REG_DE:        DS     2 
-  B2E3                          REG_PSW: 
-  B2E3                          REG_FLAGS:     DS     1 
-  B2E4                          REG_A:         DS     1 
-  B2E5                          REG_PC:        DS     2 
-  B2E7                          REG_IM:        DS     1 
+  B2FA                          TASK_REGS: 
+  B2FA                          REG_STATE:     DS     1 
+  B2FB                          REG_PAGE:      DS     1 
+  B2FC                          REG_SP:        DS     2 
+  B2FE                          REG_HL:        DS     2 
+  B300                          REG_BC:        DS     2 
+  B302                          REG_DE:        DS     2 
+  B304                          REG_PSW: 
+  B304                          REG_FLAGS:     DS     1 
+  B305                          REG_A:         DS     1 
+  B306                          REG_PC:        DS     2 
+  B308                          REG_IM:        DS     1 
   000F                          T_REGS_SIZE equ $ - TASK_REGS 
+	MACRO-80 3.44	09-Dec-81	PAGE	1-14
+
+
                                  
                                 ; 
                                 ;  Communications buffer 
                                 ;  (Must be at least as long as TASK_REG_SIZE.  Larger values may improve 
                                 ;  speed of NoICE memory load and dump commands) 
   0043                          COMBUF_SIZE equ 67              ;DATA SIZE FOR COMM BUFFER 
-  B2E8                          COMBUF:     DS  2+COMBUF_SIZE+1 ;BUFFER ALSO HAS FN, LEN, AND CHECK 
+  B309                          COMBUF:     DS  2+COMBUF_SIZE+1 ;BUFFER ALSO HAS FN, LEN, AND CHECK 
                                 ; 
-  B32E                          RAM_END     equ $               ;ADDRESS OF TOP+1 OF RAM 
+  B34F                          RAM_END     equ $               ;ADDRESS OF TOP+1 OF RAM 
                                 ; 
                                  
                                         END     RESET 
@@ -827,42 +845,43 @@
 Macros:
 
 Symbols:
-B085 	B0              B086 	B1              B278 	CHECKSUM        
-B282 	CHK10           B2E8 	COMBUF          0043 	COMBUF_SIZE     
-0000 	DATA            B004 	DUMMY_INTS      0003 	DUMMY_SIZE      
-B1E3 	ENTER_MON       00F0 	FN_ERROR        00FF 	FN_GET_STATUS   
-00F8 	FN_IN           00F0 	FN_MIN          00F7 	FN_OUT          
-00FE 	FN_READ_MEM     00FC 	FN_READ_REGS    00FA 	FN_RUN_TARGET   
-00F9 	FN_SET_BYTES    00FD 	FN_WRITE_MEM    00FB 	FN_WRITE_REGS   
-B053 	GC10            B067 	GC90            B04A 	GETCHAR         
-B158 	GLP             B160 	GLP90           B1A3 	GRLP            
-B019 	I10             B00D 	INIT            B2C9 	INITSTACK       
-B09E 	INT_ENTRY       B231 	IN_PORT         B0DE 	MA10            
-B0EA 	MA80            B0B9 	MAIN            B2D9 	MONSTACK        
-B0B6 	NOTBP           00DB 	OP_IN           00D3 	OP_OUT          
-00C9 	OP_RET          B241 	OUT_PORT        B070 	PC10            
-B06A 	PUTCHAR         B000 	R0              B007 	R1              
-B32E 	RAM_END         B148 	READ_MEM        B198 	READ_REGS       
-B2E4 	REG_A           B2DF 	REG_BC          B2E1 	REG_DE          
-B2E3 	REG_FLAGS       B2DD 	REG_HL          B2E7 	REG_IM          
-B2DA 	REG_PAGE        B2E5 	REG_PC          B2E3 	REG_PSW         
-B2DB 	REG_SP          B2D9 	REG_STATE       B00D 	RESET           
-B198 	RETURN_REGS     B000 	ROM_START       B1C8 	RUN_TARGET      
-B1E1 	RUTT10          0001 	RXRDY           B20E 	SB10            
-B229 	SB90            B25D 	SEND            B255 	SEND_STATUS     
-C403 	SERIAL_CONTROL  C400 	SERIAL_DATA     C402 	SERIAL_STATUS   
-B201 	SET_BYTES       B26C 	SND10           0002 	STAT            
-B132 	TARGET_STATUS   B2D9 	TASK_REGS       B13D 	TS10            
-B07D 	TSTG            0021 	TSTG_SIZE       0002 	TXRDY           
-000F 	T_REGS_SIZE     0008 	USER_CODE       C400 	VV55            
-B174 	WLP10           B184 	WLP20           B18F 	WLP50           
-B193 	WLP80           B195 	WLP90           B163 	WRITE_MEM       
-B1AE 	WRITE_REGS      B1C4 	WRR80           B1BC 	WRRLP           
+B0A6 	B0              B0A7 	B1              B299 	CHECKSUM        
+B2A3 	CHK10           C401 	CLIENT_STATUS   B309 	COMBUF          
+0043 	COMBUF_SIZE     0000 	DATA            B004 	DUMMY_INTS      
+0003 	DUMMY_SIZE      B204 	ENTER_MON       00F0 	FN_ERROR        
+00FF 	FN_GET_STATUS   00F8 	FN_IN           00F0 	FN_MIN          
+00F7 	FN_OUT          00FE 	FN_READ_MEM     00FC 	FN_READ_REGS    
+00FA 	FN_RUN_TARGET   00F9 	FN_SET_BYTES    00FD 	FN_WRITE_MEM    
+00FB 	FN_WRITE_REGS   B058 	GC10            B072 	GC90            
+B04A 	GETCHAR         B179 	GLP             B181 	GLP90           
+B1C4 	GRLP            B019 	I10             B00D 	INIT            
+B2EA 	INITSTACK       B0BF 	INT_ENTRY       B252 	IN_PORT         
+B0FF 	MA10            B10B 	MA80            B0DA 	MAIN            
+B2FA 	MONSTACK        B0D7 	NOTBP           00DB 	OP_IN           
+00D3 	OP_OUT          00C9 	OP_RET          B262 	OUT_PORT        
+B085 	PC10            B095 	PC11            B07A 	PUTCHAR         
+B000 	R0              B007 	R1              B34F 	RAM_END         
+B169 	READ_MEM        B1B9 	READ_REGS       B305 	REG_A           
+B300 	REG_BC          B302 	REG_DE          B304 	REG_FLAGS       
+B2FE 	REG_HL          B308 	REG_IM          B2FB 	REG_PAGE        
+B306 	REG_PC          B304 	REG_PSW         B2FC 	REG_SP          
+B2FA 	REG_STATE       B00D 	RESET           B1B9 	RETURN_REGS     
+B000 	ROM_START       B1E9 	RUN_TARGET      B202 	RUTT10          
+0001 	RXRDY           B22F 	SB10            B24A 	SB90            
+B27E 	SEND            B276 	SEND_STATUS     C403 	SERIAL_CONTROL  
+C400 	SERIAL_DATA     C402 	SERIAL_STATUS   B222 	SET_BYTES       
+B28D 	SND10           0002 	STAT            B153 	TARGET_STATUS   
+B2FA 	TASK_REGS       B15E 	TS10            B09E 	TSTG            
+0021 	TSTG_SIZE       0002 	TXRDY           000F 	T_REGS_SIZE     
+0008 	USER_CODE       C400 	VV55            B195 	WLP10           
+B1A5 	WLP20           B1B0 	WLP50           B1B4 	WLP80           
+B1B6 	WLP90           B184 	WRITE_MEM       B1CF 	WRITE_REGS      
+B1E5 	WRR80           B1DD 	WRRLP           
 
 
 
 No Fatal error(s)
 
 
-S   
-B201 	SET_BYTES       B26C 	SND10           0002 	STAT           
+S   B222 	SET_BYTES       
+B28D 	SND10           0002 	STAT            B153 	TARGET_STATUS   

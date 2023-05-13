@@ -60,7 +60,8 @@ DATA    equ     0       ;  Data register
 STAT    equ     2       ;  Status register
 ;
 ;  Define monitor serial port
-SERIAL_STATUS equ   VV55+STAT
+SERIAL_STATUS   equ   VV55+STAT
+CLIENT_STATUS   equ   VV55+1
 SERIAL_DATA   equ   VV55+DATA
 SERIAL_CONTROL equ  VV55+3
 
@@ -162,8 +163,10 @@ I10:    MOV     A,M
 ;  Uses 4 bytes of stack including return address
 ;
 GETCHAR:
-        mvi     A,8BH ; A - input, B - output, Clow, Chigh - input
+        mvi     A,89H ; A - input, B - output, Clow, Chigh - input
         sta     SERIAL_CONTROL
+        MVI     A,1
+        sta     CLIENT_STATUS
         PUSH    D
         LXI     D,8000h                 ;long timeout
 gc10:   DCX     D
@@ -177,12 +180,17 @@ gc10:   DCX     D
 ;  Data received:  return CY=0. data in A
         XRA     A                       ;cy=0
         LDA     SERIAL_DATA             ;read data
-
+        push    psw
+        xra     a
+        STA     CLIENT_STATUS
+        pop     psw
         POP     D
         RET
 ;
 ;  Timeout:  return CY=1
 gc90:   STC                             ;cy=1
+        MVI     A,0
+        STA     CLIENT_STATUS
         POP     D
         RET
 ;
@@ -193,15 +201,22 @@ gc90:   STC                             ;cy=1
 ;
 PUTCHAR:
         PUSH    PSW                     ;save byte to output
-        mvi     A,9BH ; A - output, B - output, Clow, Chigh - input
+        mvi     A,99H ; A - output, B - output, Clow, Chigh - input
         sta     SERIAL_CONTROL
+        mvi     a,2
+        sta     CLIENT_STATUS; // Ready to send
 pc10:   LDA     SERIAL_STATUS           ;read device status
         ANI     TXRDY                   ;rx ready ?
         JNZ     pc10
 
         POP     PSW
         STA     SERIAL_DATA            ;transmit char - error in wiring! must write to _STATUS
-        ;STA     SERIAL_STATUS           ;transmit char
+        xra     a
+        sta     CLIENT_STATUS
+
+pc11:   LDA     SERIAL_STATUS           ; wait for server confirms reading a byte
+        ANI     TXRDY
+        JZ      pc11
         RET
 ;
 ;===========================================================================
