@@ -172,7 +172,7 @@
                                 ;  Uses 4 bytes of stack including return address 
                                 ; 
   B04A                          GETCHAR: 
-  B04A    3E 89                         mvi     A,89H ; A - input, B - output, Clow, Chigh - input 
+  B04A    3E 99                         mvi     A,99H ; A - input, B - output, Clow, Chigh - input 
   B04C    32 C403                       sta     SERIAL_CONTROL 
   B04F    3E 01                         MVI     A,1 
 	MACRO-80 3.44	09-Dec-81	PAGE	1-3
@@ -213,7 +213,7 @@
                                 ; 
   B07A                          PUTCHAR: 
   B07A    F5                            PUSH    PSW                     ;save byte to output 
-  B07B    3E 99                         mvi     A,99H ; A - output, B - output, Clow, Chigh - input 
+  B07B    3E 89                         mvi     A,89H ; A - output, B - output, Clow, Chigh - input 
   B07D    32 C403                       sta     SERIAL_CONTROL 
   B080    3E 02                         mvi     a,2 
   B082    32 C401                       sta     CLIENT_STATUS; // Ready to send 

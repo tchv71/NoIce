@@ -163,7 +163,7 @@ I10:    MOV     A,M
 ;  Uses 4 bytes of stack including return address
 ;
 GETCHAR:
-        mvi     A,89H ; A - input, B - output, Clow, Chigh - input
+        mvi     A,99H ; A - input, B - output, Clow, Chigh - input
         sta     SERIAL_CONTROL
         MVI     A,1
         sta     CLIENT_STATUS
@@ -201,7 +201,7 @@ gc90:   STC                             ;cy=1
 ;
 PUTCHAR:
         PUSH    PSW                     ;save byte to output
-        mvi     A,99H ; A - output, B - output, Clow, Chigh - input
+        mvi     A,89H ; A - output, B - output, Clow, Chigh - input
         sta     SERIAL_CONTROL
         mvi     a,2
         sta     CLIENT_STATUS; // Ready to send
