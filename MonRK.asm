@@ -97,10 +97,46 @@ R0:     DI
 DUMMY_INTS:
         JMP     R1
 DUMMY_SIZE      equ $-DUMMY_INTS
+        JMP     READRK
 ;
 R1:     PUSH    PSW
         MVI     A,1                     ;state = 1 (breakpoint)
         JMP     INT_ENTRY
+
+READRK:
+        CALL    GETCHAR
+        JC      READRK
+        MOV     H,A
+        CALL    GETCHAR
+        JC      0F800h
+        MOV     L,A
+        CALL    GETCHAR
+        JC      0F800h
+        MOV     B,A
+        CALL    GETCHAR
+        JC      0F800h
+        MOV     C,A
+        INX     B
+        XRA     A
+        MOV     A,C
+        SBB     L
+        MOV     C,A
+        MOV     A,B
+        SBB     H
+        MOV     B,A
+LOOP:   CALL    GETCHAR
+        JC      0F800h
+        MOV     M,A
+        INX     H
+        DCX     B
+        MOV     A,B
+        ORA     C
+        JNZ     LOOP
+        RET
+
+
+
+
 ;
 ;===========================================================================
 ;  Power on reset
@@ -183,6 +219,9 @@ gc10:   DCX     D
         push    psw
         xra     a
         STA     CLIENT_STATUS
+gc11:   LDA     SERIAL_STATUS           ; wait for server
+        ANI     RXRDY
+        JZ      gc11
         pop     psw
         POP     D
         RET
