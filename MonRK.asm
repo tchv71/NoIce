@@ -56,6 +56,7 @@ USER_CODE equ 8                 ;RST 1 handler
 ;
 ;  Equates for I/O mapped 8250 or 16450 serial port
 VV55  equ     0C400h   ;base of 16450 UART
+USER_PORT equ VV55
 DATA    equ     0       ;  Data register
 STAT    equ     2       ;  Status register
 ;
@@ -141,7 +142,157 @@ LOOP:   CALL    GETCHAR
 ;===========================================================================
 ;  Power on reset
 RESET:
-;
+        MVI     A,9
+        CALL    StartCommand
+        jmp     Init
+SEND_MODE       equ 10000000b ; Режим передачи (1 0 0 A СH 0 B CL)
+RECV_MODE       equ 10010000b ; Режим приема (1 0 0 A СH 0 B CL)
+
+ERR_START   	equ 040h
+ERR_WAIT    	equ 041h
+ERR_OK_NEXT 	equ 042h
+ERR_OK          equ 043h
+ERR_OK_READ     equ 044h
+ERR_OK_ENTRY    equ 045h
+ERR_OK_WRITE	equ 046h
+ERR_OK_ADDR  	equ 047h
+ERR_OK_BLOCK    equ 04Fh 
+ ;----------------------------------------------------------------------------
+; Начало любой команды. 
+; A - код команды
+
+StartCommand:
+     ; Первым этапом происходит синхронизация с контроллером
+     ; Принимается 256 попыток, в каждой из которых пропускается 256+ байт
+     ; То есть это максимальное кол-во данных, которое может передать контроллер
+     PUSH	B
+     PUSH	H
+     PUSH	PSW
+     MVI	C, 0
+
+StartCommand1:
+     ; Режим передачи (освобождаем шину) и инициализируем HL
+     CALL       SwitchRecv
+
+     ; Начало любой команды (это шина адреса)
+     LXI	H, USER_PORT+1
+     MVI        M, 0
+     MVI        M, 44h
+     MVI        M, 40h
+     MVI        M, 0h
+
+     ; Если есть синхронизация, то контроллер ответит ERR_START
+     CALL	Recv
+     CPI	ERR_START
+     JZ		StartCommand2
+
+     ; Пауза. И за одно пропускаем 256 байт (в сумме будет 
+     ; пропущено 64 Кб данных, максимальный размер пакета)
+     PUSH	B
+     MVI	C, 0
+StartCommand3:
+     CALL	Recv
+     DCR	C
+     JNZ	StartCommand3
+     POP	B
+        
+     ; Попытки
+     DCR	C
+     JNZ	StartCommand1    
+
+     ; Код ошибки
+     MVI	A, ERR_START
+StartCommandErr2:
+     POP	B ; Прошлое значение PSW
+     POP	H ; Прошлое значение H
+     POP	B ; Прошлое значение B     
+     POP	B ; Выходим через функцию.
+     RET
+
+;----------------------------------------------------------------------------
+; Синхронизация с контроллером есть. Контроллер должен ответить ERR_OK_NEXT
+
+StartCommand2:
+     ; Ответ         	
+     CALL	WaitForReady
+     CPI	ERR_OK_NEXT
+     JNZ	StartCommandErr2
+
+     ; Переключаемся в режим передачи
+     CALL       SwitchSend
+
+     POP        PSW
+     POP        H
+     POP        B
+
+     ; Передаем код команды
+     JMP        Send2
+
+;----------------------------------------------------------------------------
+; Переключиться в режим передачи
+
+SwitchSend:
+     CALL	Recv
+SwitchSend0:
+     MVI	A, SEND_MODE
+     STA	USER_PORT+3
+     RET
+
+;----------------------------------------------------------------------------
+; Успешное окончание команды 
+; и дополнительный такт, что бы МК отпустил шину
+
+Ret0:
+     XRA	A
+
+;----------------------------------------------------------------------------
+; Окончание команды с ошибкой в A 
+; и дополнительный такт, что бы МК отпустил шину
+
+EndCommand:
+     PUSH	PSW
+     CALL	Recv
+     POP	PSW
+     RET
+
+;----------------------------------------------------------------------------
+; Переключиться в режим приема
+
+SwitchRecv:
+     MVI	A, RECV_MODE
+     STA	USER_PORT+3
+     RET ;----------------------------------------------------------------------------
+; Переключиться в режим передами и ожидание готовности МК.
+
+SwitchRecvAndWait:
+     CALL SwitchRecv
+
+;----------------------------------------------------------------------------
+; Ожидание готовности МК.
+
+WaitForReady:
+     CALL	Recv
+     CPI	ERR_WAIT
+     JZ		WaitForReady
+     RET
+
+
+;----------------------------------------------------------------------------
+; Отправить байт из A.
+
+Send2:
+     STA	USER_PORT
+
+;----------------------------------------------------------------------------
+; Принять байт в А
+
+Recv:
+     MVI	A, 20h
+     STA	USER_PORT+1
+     XRA	A
+     STA	USER_PORT+1
+     LDA	USER_PORT
+     RET ;
 ;  Initialize monitor
 INIT:   LXI     SP,MONSTACK
 ;
