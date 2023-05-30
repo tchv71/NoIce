@@ -158,36 +158,35 @@ ERR_OK_WRITE	equ 046h
 ERR_OK_ADDR  	equ 047h
 ERR_OK_BLOCK    equ 04Fh 
  ;----------------------------------------------------------------------------
-; Начало любой команды. 
-; A - код команды
+; A start of any command. 
+; A - command code
 
 StartCommand:
-     ; Первым этапом происходит синхронизация с контроллером
-     ; Принимается 256 попыток, в каждой из которых пропускается 256+ байт
-     ; То есть это максимальное кол-во данных, которое может передать контроллер
+; The first step is synchronization with the controller
+; 256 attempts are performed, each skipping 256+ bytes
+; That is, this is the maximum amount of data that the controller can transmit.
      PUSH	B
      PUSH	H
      PUSH	PSW
      MVI	C, 0
 
 StartCommand1:
-     ; Режим передачи (освобождаем шину) и инициализируем HL
+     ; Receive mode (release the bus =- port A) and initialize HL
      CALL       SwitchRecv
 
-     ; Начало любой команды (это шина адреса)
+     ; Beginning of any command (play a sequence in address bus)
      LXI	H, USER_PORT+1
      MVI        M, 0
      MVI        M, 44h
      MVI        M, 40h
      MVI        M, 0h
 
-     ; Если есть синхронизация, то контроллер ответит ERR_START
-     CALL	Recv
+     ; If there is synchronization, then the controller will respond with ERR_START     CALL	Recv
      CPI	ERR_START
      JZ		StartCommand2
 
-     ; Пауза. И за одно пропускаем 256 байт (в сумме будет 
-     ; пропущено 64 Кб данных, максимальный размер пакета)
+     ; Pause. And also we skip 256 bytes (in total it will be
+     ; 64 KB data skipped, maximum packet size)
      PUSH	B
      MVI	C, 0
 StartCommand3:
@@ -203,14 +202,14 @@ StartCommand3:
      ; Код ошибки
      MVI	A, ERR_START
 StartCommandErr2:
-     POP	B ; Прошлое значение PSW
-     POP	H ; Прошлое значение H
-     POP	B ; Прошлое значение B     
-     POP	B ; Выходим через функцию.
+     POP	B
+     POP	H
+     POP	B 
+     POP	B
      RET
 
 ;----------------------------------------------------------------------------
-; Синхронизация с контроллером есть. Контроллер должен ответить ERR_OK_NEXT
+; Synchronization with the controller is done. The controller should respond with ERR_OK_NEXT
 
 StartCommand2:
      ; Ответ         	
@@ -229,7 +228,7 @@ StartCommand2:
      JMP        Send2
 
 ;----------------------------------------------------------------------------
-; Переключиться в режим передачи
+; Switch to send mode
 
 SwitchSend:
      CALL	Recv
@@ -239,16 +238,14 @@ SwitchSend0:
      RET
 
 ;----------------------------------------------------------------------------
-; Успешное окончание команды 
-; и дополнительный такт, что бы МК отпустил шину
-
+; Successful end of the command
+; and an additional cycle so that the microcontroller releases the bus
 Ret0:
      XRA	A
 
 ;----------------------------------------------------------------------------
-; Окончание команды с ошибкой в A 
-; и дополнительный такт, что бы МК отпустил шину
-
+; Command ending with an error in A
+; and an additional cycle so that the microcontroller releases the bus
 EndCommand:
      PUSH	PSW
      CALL	Recv
@@ -256,20 +253,18 @@ EndCommand:
      RET
 
 ;----------------------------------------------------------------------------
-; Переключиться в режим приема
+; Switch to receive mode
 
 SwitchRecv:
      MVI	A, RECV_MODE
      STA	USER_PORT+3
      RET ;----------------------------------------------------------------------------
-; Переключиться в режим передами и ожидание готовности МК.
+;Switch to receive mode and wait for microcontroller be ready
 
 SwitchRecvAndWait:
      CALL SwitchRecv
 
 ;----------------------------------------------------------------------------
-; Ожидание готовности МК.
-
 WaitForReady:
      CALL	Recv
      CPI	ERR_WAIT
@@ -278,13 +273,13 @@ WaitForReady:
 
 
 ;----------------------------------------------------------------------------
-; Отправить байт из A.
+; Send a byte from A.
 
 Send2:
      STA	USER_PORT
 
 ;----------------------------------------------------------------------------
-; Принять байт в А
+; Receive a byte into А
 
 Recv:
      MVI	A, 20h
