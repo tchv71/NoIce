@@ -142,9 +142,17 @@ LOOP:   CALL    GETCHAR
 ;===========================================================================
 ;  Power on reset
 RESET:
+        MVI     C,0Dh
+        CALL    0F809h
+        MVI     C,0Ah
+        CALL    0F809h
+        LXI     H,Prompt
+        CALL    0F818h
         MVI     A,9
         CALL    StartCommand
         jmp     Init
+Prompt:     DB     "NOICE 8080 MONITOR V3.11",0
+
 SEND_MODE       equ 10000000b ; Режим передачи (1 0 0 A СH 0 B CL)
 RECV_MODE       equ 10010000b ; Режим приема (1 0 0 A СH 0 B CL)
 
@@ -171,7 +179,7 @@ StartCommand:
      MVI	C, 0
 
 StartCommand1:
-     ; Receive mode (release the bus =- port A) and initialize HL
+     ; Receive mode (release the bus - port A) and initialize HL
      CALL       SwitchRecv
 
      ; Beginning of any command (play a sequence in address bus)
@@ -181,7 +189,8 @@ StartCommand1:
      MVI        M, 40h
      MVI        M, 0h
 
-     ; If there is synchronization, then the controller will respond with ERR_START     CALL	Recv
+     ; If there is synchronization, then the controller will respond with ERR_START
+     CALL	Recv
      CPI	ERR_START
      JZ		StartCommand2
 
