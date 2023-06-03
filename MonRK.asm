@@ -109,33 +109,37 @@ READRK:
         JC      READRK
         MOV     H,A
         CALL    GETCHAR
-        JC      0F800h
+        JC      ERRRK
         MOV     L,A
         CALL    GETCHAR
-        JC      0F800h
+        JC      ERRRK
         MOV     B,A
         CALL    GETCHAR
-        JC      0F800h
+        JC      ERRRK
         MOV     C,A
         INX     B
-        XRA     A
         MOV     A,C
-        SBB     L
+        SUB     L
         MOV     C,A
         MOV     A,B
         SBB     H
         MOV     B,A
 LOOP:   CALL    GETCHAR
-        JC      0F800h
+        JC      ERRRK
         MOV     M,A
         INX     H
         DCX     B
         MOV     A,B
         ORA     C
         JNZ     LOOP
+        mvi     c,6
+LOOP2:  CALL    GETCHAR
+        JC      ERRRK
+        DCR     C
+        JNZ     LOOP2
         RET
 
-
+ERRRK:  JMP     0F800h
 
 
 ;
