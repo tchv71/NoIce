@@ -361,6 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
-/MONRK.PRN
 /MONRK.REL
 /MonRK.rkl

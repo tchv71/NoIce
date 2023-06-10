@@ -1,4 +1,4 @@
-п»ї;  MON8080.ASM - 8080 Debug monitor for use with NoICE85
+;  MON8080.ASM - 8080 Debug monitor for use with NoICE85
 ;  This file may be assembled with the Alfred Arnold assembler.
 ;  Available from http://john.ccac.rwth-aachen.de:8000/as/
 ;
@@ -50,8 +50,8 @@
 ;============================================================================
 ;
 ;  Hardware definitions
-ROM_START equ 0b000h            ;START OF MONITOR CODE
-;RAM_START equ 7400h             ;START OF MONITOR RAM
+ROM_START equ 0EC00h; 0b000h            ;START OF MONITOR CODE
+RAM_START equ 0d310h            ;START OF MONITOR RAM
 USER_CODE equ 8                 ;RST 1 handler
 ;
 ;  Equates for I/O mapped 8250 or 16450 serial port
@@ -70,9 +70,9 @@ RXRDY equ           1         ; MASK FOR RX BUFFER FULL
 TXRDY equ           2         ; MASK FOR TX BUFFER EMPTY
 ;
 ;  op-code equates for IN and OUT
-OP_IN   equ     0DBh
-OP_OUT  equ     0D3h
-OP_RET  equ     0C9h
+;OP_IN   equ     0DBh
+;OP_OUT  equ     0D3h
+;OP_RET  equ     0C9h
 ;
 ;===========================================================================
 ;
@@ -98,12 +98,18 @@ R0:     DI
 DUMMY_INTS:
         JMP     R1
 DUMMY_SIZE      equ $-DUMMY_INTS
-        JMP     READRK
+        JMP     READRK_NO_START
+        JMP     READRK_START
 ;
 R1:     PUSH    PSW
         MVI     A,1                     ;state = 1 (breakpoint)
         JMP     INT_ENTRY
 
+READRK_START:
+        MVI     E,1
+        JMP     READRK
+READRK_NO_START:
+        MVI     E,0
 READRK:
         CALL    GETCHAR
         JC      READRK
@@ -124,6 +130,7 @@ READRK:
         MOV     A,B
         SBB     H
         MOV     B,A
+        PUSH    H
 LOOP:   CALL    GETCHAR
         JC      ERRRK
         MOV     M,A
@@ -132,12 +139,16 @@ LOOP:   CALL    GETCHAR
         MOV     A,B
         ORA     C
         JNZ     LOOP
+        POP     H
         mvi     c,6
 LOOP2:  CALL    GETCHAR
         JC      ERRRK
         DCR     C
         JNZ     LOOP2
-        RET
+        MOV     A,E
+        ORA     A
+        RZ
+        PCHL
 
 ERRRK:  JMP     0F800h
 
@@ -157,8 +168,8 @@ RESET:
         jmp     Init
 Prompt:     DB     "NOICE 8080 MONITOR V3.11",0
 
-SEND_MODE       equ 10000000b ; Р РµР¶РёРј РїРµСЂРµРґР°С‡Рё (1 0 0 A РЎH 0 B CL)
-RECV_MODE       equ 10010000b ; Р РµР¶РёРј РїСЂРёРµРјР° (1 0 0 A РЎH 0 B CL)
+SEND_MODE       equ 10000000b ; Режим передачи (1 0 0 A СH 0 B CL)
+RECV_MODE       equ 10010000b ; Режим приема (1 0 0 A СH 0 B CL)
 
 ERR_START   	equ 040h
 ERR_WAIT    	equ 041h
@@ -208,11 +219,11 @@ StartCommand3:
      JNZ	StartCommand3
      POP	B
         
-     ; РџРѕРїС‹С‚РєРё
+     ; Попытки
      DCR	C
      JNZ	StartCommand1    
 
-     ; РљРѕРґ РѕС€РёР±РєРё
+     ; Код ошибки
      MVI	A, ERR_START
 StartCommandErr2:
      POP	B
@@ -225,19 +236,19 @@ StartCommandErr2:
 ; Synchronization with the controller is done. The controller should respond with ERR_OK_NEXT
 
 StartCommand2:
-     ; РћС‚РІРµС‚         	
+     ; Ответ         	
      CALL	WaitForReady
      CPI	ERR_OK_NEXT
      JNZ	StartCommandErr2
 
-     ; РџРµСЂРµРєР»СЋС‡Р°РµРјСЃСЏ РІ СЂРµР¶РёРј РїРµСЂРµРґР°С‡Рё
+     ; Переключаемся в режим передачи
      CALL       SwitchSend
 
      POP        PSW
      POP        H
      POP        B
 
-     ; РџРµСЂРµРґР°РµРј РєРѕРґ РєРѕРјР°РЅРґС‹
+     ; Передаем код команды
      JMP        Send2
 
 ;----------------------------------------------------------------------------
@@ -292,7 +303,7 @@ Send2:
      STA	USER_PORT
 
 ;----------------------------------------------------------------------------
-; Receive a byte into Рђ
+; Receive a byte into А
 
 Recv:
      MVI	A, 20h
@@ -857,9 +868,9 @@ IN_PORT:
 ;
 ;  Port address is at COMBUF+2 (and unused high address+3)
 ;  Build "IN PORT" and "RET" around it.
-        MVI     A,OP_IN
+        MVI     A,IN
         STA     COMBUF+1
-        MVI     A,OP_RET
+        MVI     A,RET
         STA     COMBUF+3
 ;
 ;  Read port value
@@ -877,9 +888,9 @@ OUT_PORT:
 ;  Port address is at COMBUF+2, (unused high address+3)
 ;  Data to write is at COMBUF+4
 ;  Build "OUT PORT" and "RET" in combuffer
-        MVI     A,OP_OUT
+        MVI     A,OUT
         STA     COMBUF+1
-        MVI     A,OP_RET
+        MVI     A,RET
         STA     COMBUF+3
 ;
 ;  Get data
@@ -950,6 +961,8 @@ CHK10:  ADD     M
 ;  RAM definitions:  top 1K (or less)
         ;DSEG
         ;ORG    RAM_START               ; Monitor RAM
+        .DEPHASE
+        .PHASE RAM_START
 ;
 ;  Initial user stack
 ;  (Size and location is user option)
