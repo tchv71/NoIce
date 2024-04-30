@@ -363,3 +363,6 @@ MigrationBackup/
 FodyWeavers.xsd
 /MONRK.REL
 /MonRK.rkl
+/MONRK.PRN
+/NoIce.vcxproj
+/NoIce.vcxproj.filters

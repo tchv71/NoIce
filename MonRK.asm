@@ -50,12 +50,12 @@
 ;============================================================================
 ;
 ;  Hardware definitions
-ROM_START equ 0EC00h; 0b000h            ;START OF MONITOR CODE
-RAM_START equ 0d310h            ;START OF MONITOR RAM
+ROM_START equ 0C800h            ;START OF MONITOR CODE
+RAM_START equ 0CC00h;0d310h            ;START OF MONITOR RAM
 USER_CODE equ 8                 ;RST 1 handler
 ;
 ;  Equates for I/O mapped 8250 or 16450 serial port
-VV55  equ     0C400h   ;base of 16450 UART
+VV55  equ     50H;0C400h   ;base of 16450 UART
 USER_PORT equ VV55
 DATA    equ     0       ;  Data register
 STAT    equ     2       ;  Status register
@@ -73,11 +73,24 @@ TXRDY equ           2         ; MASK FOR TX BUFFER EMPTY
 ;OP_IN   equ     0DBh
 ;OP_OUT  equ     0D3h
 ;OP_RET  equ     0C9h
-;
+
+        LXI     H,START_CODE
+        LXI     D,R0
+        LXI     B, END_CODE-R0
+l00:    MOV     A,M
+        STAX    D
+        INX     H
+        INX     D
+        DCX     B
+        MOV     A,B
+        ORA     C
+        JNZ     l00
+        JMP     R0
 ;===========================================================================
 ;
 ;  Main entry point
 ;
+START_CODE:
         ;CSEG
         .PHASE ROM_START;ORG     ROM_START
 R0:     DI
@@ -152,20 +165,97 @@ LOOP2:  CALL    GETCHAR
 
 ERRRK:  JMP     0F800h
 
+@SYSREG	MACRO	VAL
+	IN	-1
+	MVI	A,VAL
+	OUT	-1
+	ENDM
+; IN and OUT MACRO comands
+@in	MACRO	addr
+IF ((addr) LT 256)
+	in	addr
+ELSE
+	lda	addr
+ENDIF
+	ENDM
+
+@out	MACRO	addr
+IF ((addr) LT 256)
+	out	addr
+ELSE
+	sta	addr
+ENDIF
+	ENDM
 
 ;
 ;===========================================================================
 ;  Power on reset
 RESET:
-        MVI     C,0Dh
-        CALL    0F809h
-        MVI     C,0Ah
-        CALL    0F809h
-        LXI     H,Prompt
-        CALL    0F818h
-        MVI     A,9
-        CALL    StartCommand
-        jmp     Init
+	MVI     C,0Dh
+	CALL    CONOUT
+	MVI     C,0Ah
+	CALL    CONOUT
+	LXI     H,Prompt
+	CALL    PUTS
+IF 0
+	@SYSREG	0C0h ; Turn on external device programming mode (for in/out commands)
+
+	LXI	H,BEGPRO+1
+
+	LXI	B,400h + VV55
+	MVI     A,1
+	CALL	SETPORT
+	@SYSREG	80h
+ENDIF
+	MVI     A,9
+	CALL    StartCommand
+	jmp     Init
+
+PUTS:	MOV	A,M
+	INX	H
+	MOV	C,A
+	ORA	A
+	RZ
+	CALL	CONOUT
+	JMP	PUTS
+
+CONOUT: PUSH    H
+        CALL    CONOU1
+        POP     H
+        RET
+
+CONOU1:
+	LHLD	1
+        PUSH    D
+	LXI	D,9
+	DAD	D
+	MOV	A,M
+	CPI	JMP
+        POP     D
+	RNZ
+	INX	H
+	PUSH	D
+	MOV	E,M
+	INX	H
+	MOV	D,M
+	XCHG
+	POP	D
+	PCHL
+
+
+
+; A - value
+; C - port number
+; B - count
+SETPORT:
+	MOV	M,C
+BEGPRO:
+	OUT 0
+	INR M
+	DCR B
+	RZ
+	JMP BEGPRO
+
 Prompt:     DB     "NOICE 8080 MONITOR V3.11",0
 
 SEND_MODE       equ 10000000b ; Режим передачи (1 0 0 A СH 0 B CL)
@@ -198,11 +288,15 @@ StartCommand1:
      CALL       SwitchRecv
 
      ; Beginning of any command (play a sequence in address bus)
-     LXI	H, USER_PORT+1
-     MVI        M, 0
-     MVI        M, 44h
-     MVI        M, 40h
-     MVI        M, 0h
+     ;LXI	H, USER_PORT+1
+     MVI        A, 0
+     @out       USER_PORT+1
+     MVI        A, 44h
+     @out       USER_PORT+1
+     MVI        A, 40h
+     @out       USER_PORT+1
+     MVI        A, 0h
+     @out       USER_PORT+1
 
      ; If there is synchronization, then the controller will respond with ERR_START
      CALL	Recv
@@ -258,7 +352,7 @@ SwitchSend:
      CALL	Recv
 SwitchSend0:
      MVI	A, SEND_MODE
-     STA	USER_PORT+3
+     @out	USER_PORT+3
      RET
 
 ;----------------------------------------------------------------------------
@@ -281,7 +375,7 @@ EndCommand:
 
 SwitchRecv:
      MVI	A, RECV_MODE
-     STA	USER_PORT+3
+     @out	USER_PORT+3
      RET ;----------------------------------------------------------------------------
 ;Switch to receive mode and wait for microcontroller be ready
 
@@ -300,17 +394,17 @@ WaitForReady:
 ; Send a byte from A.
 
 Send2:
-     STA	USER_PORT
+     @out	USER_PORT
 
 ;----------------------------------------------------------------------------
 ; Receive a byte into А
 
 Recv:
      MVI	A, 20h
-     STA	USER_PORT+1
+     @out	USER_PORT+1
      XRA	A
-     STA	USER_PORT+1
-     LDA	USER_PORT
+     @out	USER_PORT+1
+     @in	USER_PORT
      RET ;
 ;  Initialize monitor
 INIT:   LXI     SP,MONSTACK
@@ -328,7 +422,7 @@ I10:    MOV     A,M
         STAX    D
         INX     H
         INX     D
-        DCR     B
+        DCR     C
         JNZ     I10
 
 ;===========================================================================
@@ -370,26 +464,26 @@ I10:    MOV     A,M
 ;
 GETCHAR:
         mvi     A,99H ; A - input, B - output, Clow, Chigh - input
-        sta     SERIAL_CONTROL
+        @out    SERIAL_CONTROL
         MVI     A,1
-        sta     CLIENT_STATUS
+        @out    CLIENT_STATUS
         PUSH    D
         LXI     D,8000h                 ;long timeout
 gc10:   DCX     D
         MOV     A,D
         ORA     E
         JZ      gc90                    ;exit if timeout
-        LDA     SERIAL_STATUS           ;read device status
+        @in     SERIAL_STATUS           ;read device status
         ANI     RXRDY
         JNZ      gc10                    ;not ready yet.
 ;
 ;  Data received:  return CY=0. data in A
         XRA     A                       ;cy=0
-        LDA     SERIAL_DATA             ;read data
+        @in     SERIAL_DATA             ;read data
         push    psw
         xra     a
-        STA     CLIENT_STATUS
-gc11:   LDA     SERIAL_STATUS           ; wait for server
+        @out    CLIENT_STATUS
+gc11:   @in     SERIAL_STATUS           ; wait for server
         ANI     RXRDY
         JZ      gc11
         pop     psw
@@ -399,7 +493,7 @@ gc11:   LDA     SERIAL_STATUS           ; wait for server
 ;  Timeout:  return CY=1
 gc90:   STC                             ;cy=1
         MVI     A,0
-        STA     CLIENT_STATUS
+        @out    CLIENT_STATUS
         POP     D
         RET
 ;
@@ -411,19 +505,19 @@ gc90:   STC                             ;cy=1
 PUTCHAR:
         PUSH    PSW                     ;save byte to output
         mvi     A,89H ; A - output, B - output, Clow, Chigh - input
-        sta     SERIAL_CONTROL
+        @out    SERIAL_CONTROL
         mvi     a,2
-        sta     CLIENT_STATUS; // Ready to send
-pc10:   LDA     SERIAL_STATUS           ;read device status
+        @out    CLIENT_STATUS; // Ready to send
+pc10:   @in     SERIAL_STATUS           ;read device status
         ANI     TXRDY                   ;rx ready ?
         JNZ     pc10
 
         POP     PSW
-        STA     SERIAL_DATA            ;transmit char - error in wiring! must write to _STATUS
+        @out    SERIAL_DATA            ;transmit char - error in wiring! must write to _STATUS
         xra     a
-        sta     CLIENT_STATUS
+        @out    CLIENT_STATUS
 
-pc11:   LDA     SERIAL_STATUS           ; wait for server confirms reading a byte
+pc11:   @in     SERIAL_STATUS           ; wait for server confirms reading a byte
         ANI     TXRDY
         JZ      pc11
         RET
@@ -956,7 +1050,7 @@ CHK10:  ADD     M
         DCR     B
         JNZ     CHK10           ;loop for all
         RET                     ;return with checksum in A
-
+END_CODE:
 ;============================================================================
 ;  RAM definitions:  top 1K (or less)
         ;DSEG
