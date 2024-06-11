@@ -49,13 +49,20 @@
 ;
 ;============================================================================
 ;
+CPM_OLDP        EQU     1 ; Old palmira CP/M generation without programmable DC
 ;  Hardware definitions
+IF      CPM_OLDP
+ROM_START equ 8800h;//0C800h            ;START OF MONITOR CODE
+ELSE
 ROM_START equ 0C800h            ;START OF MONITOR CODE
-RAM_START equ 0CC00h;0d310h            ;START OF MONITOR RAM
-USER_CODE equ 8                 ;RST 1 handler
+ENDIF
+;RAM_START equ 0CD00h-0c800h+ROM_START;          ;START OF MONITOR RAM
+USER_CODE equ 8                 ; RST 1 handler
+?Ctrl	equ	40h
+?Shift	equ	20h
 ;
 ;  Equates for I/O mapped 8250 or 16450 serial port
-VV55  equ     50H;0C400h   ;base of 16450 UART
+VV55  equ    50H ; 0C400h   ;base of 16450 UART
 USER_PORT equ VV55
 DATA    equ     0       ;  Data register
 STAT    equ     2       ;  Status register
@@ -73,7 +80,7 @@ TXRDY equ           2         ; MASK FOR TX BUFFER EMPTY
 ;OP_IN   equ     0DBh
 ;OP_OUT  equ     0D3h
 ;OP_RET  equ     0C9h
-
+IF 0
         LXI     H,START_CODE
         LXI     D,R0
         LXI     B, END_CODE-R0
@@ -86,6 +93,7 @@ l00:    MOV     A,M
         ORA     C
         JNZ     l00
         JMP     R0
+ENDIF
 ;===========================================================================
 ;
 ;  Main entry point
@@ -191,12 +199,36 @@ ENDIF
 ;===========================================================================
 ;  Power on reset
 RESET:
-	MVI     C,0Dh
-	CALL    CONOUT
-	MVI     C,0Ah
-	CALL    CONOUT
-	LXI     H,Prompt
-	CALL    PUTS
+	;LXI	D,VRAM_ADR
+	;CALL	BIOS_CONFIG
+
+        @SYSREG 0C0h
+
+        MVI     A,0Eh
+        @out    VV55
+        @out    VV55+1
+        @out    VV55+2
+        @out    VV55+3
+
+        xra     a
+        @out    0
+        @out    1
+        @out    2
+        @out    3
+
+        @SYSREG 80h
+
+        LXI     H,0
+        SHLD    PPI_ADR
+        mvi     L,50h
+        SHLD    PPI3_ADR
+
+        MVI     C,0Dh
+        CALL    0F809h
+        MVI     C,0Ah
+        CALL    0F809h
+        LXI     H,Prompt
+        CALL    0F818h
 IF 0
 	@SYSREG	0C0h ; Turn on external device programming mode (for in/out commands)
 
@@ -210,6 +242,45 @@ ENDIF
 	MVI     A,9
 	CALL    StartCommand
 	jmp     Init
+BIOS_CONFIG:
+	LHLD	1
+	LXI	B,30H
+	DAD	B
+	MOV	A,M
+	CPI	JMP
+	RNZ
+	INX	H
+	PUSH	D
+	MOV	E,M
+	INX	H
+	MOV	D,M
+	XCHG
+	POP	D
+	PCHL
+
+_in::	INR	H
+	DCR	H
+	JZ	_in_port
+	MOV	A,M
+	RET
+_in_port:
+	MOV	A,L
+	STA	$+4
+	IN	0
+	RET
+
+_out::	INR	H
+	DCR	H
+	jz	_out_port
+	MOV	M,A
+	RET
+_out_port:
+	PUSH	PSW
+	MOV	A,L
+	STA	$+5
+	POP	PSW
+	OUT	0
+	RET
 
 PUTS:	MOV	A,M
 	INX	H
@@ -256,7 +327,7 @@ BEGPRO:
 	RZ
 	JMP BEGPRO
 
-Prompt:     DB     "NOICE 8080 MONITOR V3.11",0
+Prompt:     DB     "NOICE 8080 MONITOR V3.12 (Ctrl+Shift to break)",0
 
 SEND_MODE       equ 10000000b ; Режим передачи (1 0 0 A СH 0 B CL)
 RECV_MODE       equ 10010000b ; Режим приема (1 0 0 A СH 0 B CL)
@@ -508,7 +579,9 @@ PUTCHAR:
         @out    SERIAL_CONTROL
         mvi     a,2
         @out    CLIENT_STATUS; // Ready to send
-pc10:   @in     SERIAL_STATUS           ;read device status
+pc10:   ;CALL    CheckBrk
+        ;JZ      0
+        @in     SERIAL_STATUS           ;read device status
         ANI     TXRDY                   ;rx ready ?
         JNZ     pc10
 
@@ -517,9 +590,21 @@ pc10:   @in     SERIAL_STATUS           ;read device status
         xra     a
         @out    CLIENT_STATUS
 
-pc11:   @in     SERIAL_STATUS           ; wait for server confirms reading a byte
+pc11::  ;CALL    CheckBrk
+        ;JZ      0
+        @in     SERIAL_STATUS           ; wait for server confirms reading a byte
         ANI     TXRDY
         JZ      pc11
+        RET
+
+CheckBrk:
+        PUSH    H
+        LHLD    PPI_ADR
+        INX     H
+        INX     H
+        CALL    _in
+        POP     H
+        ANI     ?Ctrl+?Shift
         RET
 ;
 ;===========================================================================
@@ -582,7 +667,10 @@ NOTBP:  JMP     ENTER_MON       ;HL POINTS AT BREAKPOINT OPCODE
 ;
 ;===========================================================================
 ;  Main loop:  wait for command frame from master
-MAIN:   LXI     SP,MONSTACK     ;CLEAN STACK IS HAPPY STACK
+MAIN:   CALL    CheckBrk
+        JZ      0
+
+        LXI     SP,MONSTACK     ;CLEAN STACK IS HAPPY STACK
         LXI     H,COMBUF        ;BUILD MESSAGE HERE
 ;
 ;  First byte is a function code
@@ -1011,7 +1099,9 @@ SEND_STATUS:
 ;
 ;  Uses 6 bytes of stack (not including return address: jumped, not called)
 ;
-SEND:   CALL    CHECKSUM        ;GET A=CHECKSUM, HL->checksum location
+SEND:
+        ;CALL    0F803h
+        CALL    CHECKSUM        ;GET A=CHECKSUM, HL->checksum location
         CMA
         INR     A
         MOV     M,A             ;STORE NEGATIVE OF CHECKSUM
@@ -1053,10 +1143,6 @@ CHK10:  ADD     M
 END_CODE:
 ;============================================================================
 ;  RAM definitions:  top 1K (or less)
-        ;DSEG
-        ;ORG    RAM_START               ; Monitor RAM
-        .DEPHASE
-        .PHASE RAM_START
 ;
 ;  Initial user stack
 ;  (Size and location is user option)
@@ -1065,7 +1151,7 @@ INITSTACK:
 ;
 ;  Monitor stack
 ;  (Calculated use is at most 6 bytes.  Leave plenty of spare)
-        DS     16
+        DS     16+16
 MONSTACK:
 ;
 ;  Target registers:  order must match that in TRG8085.C
@@ -1088,7 +1174,16 @@ T_REGS_SIZE equ $ - TASK_REGS
 ;  (Must be at least as long as TASK_REG_SIZE.  Larger values may improve
 ;  speed of NoICE memory load and dump commands)
 COMBUF_SIZE equ 67              ;DATA SIZE FOR COMM BUFFER
-COMBUF:     DS  2+COMBUF_SIZE+1 ;BUFFER ALSO HAS FN, LEN, AND CHECK
+COMBUF:     DS  2+COMBUF_SIZE+1+32 ;BUFFER ALSO HAS FN, LEN, AND CHECK
+
+VRAM_ADR::	DW 0B770h	; VRAM buffer visible start address - 0B7C2h
+PPI_ADR::	DW 0C200h 	; VV55 keyboard Controller - 0C200h
+PPI2_ADR::	DW 0C400h	; VV55 additional PPI  - 0C400h
+DISP_ADR::	DW 0C000h	; VG75 Display Controller - 0C000h
+DMA_ADR::	DW 0E000h	; VT57 DMA Controller - 0E000h
+PALM_CTR_ADR::	DW 0CE00h	; Palmira Control Byte
+PPI3_ADR::	DW 0CA00h	; VV55 additional PPI3  - 0CA00h
+		DW 0,0	; Reserved for future use
 ;
 RAM_END     equ $               ;ADDRESS OF TOP+1 OF RAM
 ;
