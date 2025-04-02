@@ -26,7 +26,7 @@ send2: MonZ80.rkl
 	cmd /C copy /B  $< $(PORT)
 
 MonRK.rkl: MonRK.BIN
-	../makerk/Release/makerk.exe 8800 $< $@
+	../makerk/Release/makerk.exe 100 $< $@
 
 MonRk.bin: MonRk.REL
 	$(M80PATH)/L80 /P:100,$<,$@/N/E
