@@ -49,17 +49,36 @@
 ;
 ;============================================================================
 ;
-CPM_OLDP        EQU     1 ; Old palmira CP/M generation without programmable DC
+CPM_OLDP        EQU     0 ; Old palmira CP/M generation without programmable DC
+;USE_DMA        EQU     0
+USE_PORT        EQU     1
+;CPM             EQU     1
 ;  Hardware definitions
 IF      CPM_OLDP
 ROM_START equ 8800h;//0C800h            ;START OF MONITOR CODE
 ELSE
-ROM_START equ 0C800h            ;START OF MONITOR CODE
+ROM_START equ 8800h            ;START OF MONITOR CODE
 ENDIF
 ;RAM_START equ 0CD00h-0c800h+ROM_START;          ;START OF MONITOR RAM
 USER_CODE equ 8                 ; RST 1 handler
 ?Ctrl	equ	40h
 ?Shift	equ	20h
+
+IFDEF  USE_PORT
+
+FT245R  equ     0D0h    ;  base address of FT245R FIFO
+DATA    equ     0       ;  Data register
+STAT    equ     1       ;  Status register
+;
+;  Define FIFO port
+FIFO_DATA   equ   FT245R+DATA
+FIFO_STATUS equ   FT245R+STAT
+
+RXEMPTY equ     1       ; MASK FOR RX BUFFER EMPTY
+TXFULL  equ     2       ; MASK FOR TX BUFFER FULL
+
+ELSE
+IFNDEF USE_DMA
 ;
 ;  Equates for I/O mapped 8250 or 16450 serial port
 VV55  equ    50H ; 0C400h   ;base of 16450 UART
@@ -80,7 +99,15 @@ TXRDY equ           2         ; MASK FOR TX BUFFER EMPTY
 ;OP_IN   equ     0DBh
 ;OP_OUT  equ     0D3h
 ;OP_RET  equ     0C9h
-IF 0
+ENDIF
+ENDIF
+
+IFDEF USE_DMA
+DMA EQU 30H
+SD  EQU 60H
+ENDIF
+
+IF 1
         LXI     H,START_CODE
         LXI     D,R0
         LXI     B, END_CODE-R0
@@ -174,41 +201,53 @@ LOOP2:  CALL    GETCHAR
 ERRRK:  JMP     0F800h
 
 @SYSREG	MACRO	VAL
-	IN	-1
-	MVI	A,VAL
-	OUT	-1
-	ENDM
+        IN	-1
+        MVI	A,VAL
+        OUT	-1
+        ENDM
 ; IN and OUT MACRO comands
 @in	MACRO	addr
 IF ((addr) LT 256)
-	in	addr
+        in	addr
 ELSE
-	lda	addr
+        lda	addr
 ENDIF
-	ENDM
+        ENDM
 
 @out	MACRO	addr
 IF ((addr) LT 256)
-	out	addr
+        out	addr
 ELSE
-	sta	addr
+        sta	addr
 ENDIF
-	ENDM
+        ENDM
 
 ;
 ;===========================================================================
 ;  Power on reset
 RESET:
-	;LXI	D,VRAM_ADR
-	;CALL	BIOS_CONFIG
+IFDEF   CPM
+        LXI	D,VRAM_ADR
+        CALL	BIOS_CONFIG
+ENDIF
+
+        @SYSREG 0C0h
+IFDEF  USE_PORT
+        MVI     A,12
+        out     FT245R
+        out     FT245R + 1
+ENDIF
+        @SYSREG 80h
 
         @SYSREG 0C0h
 
+IF 0
         MVI     A,0Eh
         @out    VV55
         @out    VV55+1
         @out    VV55+2
         @out    VV55+3
+ENDIF
 
         xra     a
         @out    0
@@ -216,79 +255,88 @@ RESET:
         @out    2
         @out    3
 
+IFDEF USE_DMA
+        MVI     A,9
+        out     SD
+
+        lxi     b,1000h+DMA
+        lxi     h,BEGPRO+1
+        mvi     A,7
+        call    SETPORT
+ENDIF
         @SYSREG 80h
 
         LXI     H,0
         SHLD    PPI_ADR
-        mvi     L,50h
-        SHLD    PPI3_ADR
+        ;mvi     L,50h
+        ;SHLD    PPI3_ADR
 
-        MVI     C,0Dh
-        CALL    0F809h
-        MVI     C,0Ah
-        CALL    0F809h
         LXI     H,Prompt
+IFNDEF  CPM
         CALL    0F818h
-IF 0
-	@SYSREG	0C0h ; Turn on external device programming mode (for in/out commands)
-
-	LXI	H,BEGPRO+1
-
-	LXI	B,400h + VV55
-	MVI     A,1
-	CALL	SETPORT
-	@SYSREG	80h
+ELSE
+        CALL    PUTS
 ENDIF
-	MVI     A,9
-	CALL    StartCommand
-	jmp     Init
+IF 0
+        @SYSREG	0C0h ; Turn on external device programming mode (for in/out commands)
+        
+        LXI	    H,BEGPRO+1
+        
+        LXI     B,400h + VV55
+        MVI     A,1
+        CALL    SETPORT
+        @SYSREG 80h
+ENDIF
+        ;MVI     A,9
+        ;CALL    StartCommand
+        jmp     Init
 BIOS_CONFIG:
-	LHLD	1
-	LXI	B,30H
-	DAD	B
-	MOV	A,M
-	CPI	JMP
-	RNZ
-	INX	H
-	PUSH	D
-	MOV	E,M
-	INX	H
-	MOV	D,M
-	XCHG
-	POP	D
-	PCHL
+        LHLD	1
+        LXI     B,30H
+        DAD     B
+        MOV     A,M
+        CPI     JMP
+        RNZ
+        INX     H
+        PUSH    D
+        MOV     E,M
+        INX     H
+        MOV     D,M
+        XCHG
+        POP     D
+        PCHL
 
-_in::	INR	H
-	DCR	H
-	JZ	_in_port
-	MOV	A,M
-	RET
+_in::	INR     H
+        DCR     H
+        JZ      _in_port
+        MOV     A,M
+        RET
 _in_port:
-	MOV	A,L
-	STA	$+4
-	IN	0
-	RET
+        MOV     A,L
+        STA     $+4
+        IN      0
+        RET
 
-_out::	INR	H
-	DCR	H
-	jz	_out_port
-	MOV	M,A
-	RET
+_out::	INR     H
+        DCR     H
+        jz      _out_port
+        MOV     M,A
+        RET
 _out_port:
-	PUSH	PSW
-	MOV	A,L
-	STA	$+5
-	POP	PSW
-	OUT	0
-	RET
+        PUSH    PSW
+        MOV     A,L
+        STA     $+5
+        POP     PSW
+        OUT     0
+        RET
 
-PUTS:	MOV	A,M
-	INX	H
-	MOV	C,A
-	ORA	A
-	RZ
-	CALL	CONOUT
-	JMP	PUTS
+PUTS:   MOV     A,M
+        INX     H
+        MOV     C,A
+        ORA     A
+        RZ
+        CALL    CONOUT
+        JMP     PUTS
 
 CONOUT: PUSH    H
         CALL    CONOU1
@@ -296,22 +344,22 @@ CONOUT: PUSH    H
         RET
 
 CONOU1:
-	LHLD	1
+        LHLD	1
         PUSH    D
-	LXI	D,9
-	DAD	D
-	MOV	A,M
-	CPI	JMP
+        LXI	D,9
+        DAD	D
+        MOV	A,M
+        CPI	JMP
         POP     D
-	RNZ
-	INX	H
-	PUSH	D
-	MOV	E,M
-	INX	H
-	MOV	D,M
-	XCHG
-	POP	D
-	PCHL
+        RNZ
+        INX	H
+        PUSH	D
+        MOV	E,M
+        INX	H
+        MOV	D,M
+        XCHG
+        POP	D
+        PCHL
 
 
 
@@ -319,164 +367,88 @@ CONOU1:
 ; C - port number
 ; B - count
 SETPORT:
-	MOV	M,C
+        MOV	M,C
 BEGPRO:
-	OUT 0
-	INR M
-	DCR B
-	RZ
-	JMP BEGPRO
+        OUT 0
+        INR M
+        DCR B
+        RZ
+        JMP BEGPRO
+IFDEF CPM
+Prompt:     DB     "NOICE 8080 MONITOR V3.20 (Ctrl+Shift to break)",10,13,0
+ELSE
+Prompt:     DB     "NOICE 8080 MONITOR V3.20 (CTRL+SHIFT TO BREAK)",10,13,0
+ENDIF
 
-Prompt:     DB     "NOICE 8080 MONITOR V3.12 (Ctrl+Shift to break)",0
+;SEND_MODE       equ 10000000b ; Режим передачи (1 0 0 A СH 0 B CL)
+;RECV_MODE       equ 10010000b ; Режим приема (1 0 0 A СH 0 B CL)
 
-SEND_MODE       equ 10000000b ; Режим передачи (1 0 0 A СH 0 B CL)
-RECV_MODE       equ 10010000b ; Режим приема (1 0 0 A СH 0 B CL)
+STA_START       EQU 040h ; МК переключен в режим приема команд
+STA_WAIT        EQU 041h ; МК выполняет команду
+STA_OK_DISK     EQU 042h ; Накопитель исправен, микроконтроллер готов к приему команды
+STA_OK_CMD      EQU 043h ; Команда выполнена
+STA_OK_READ     EQU 044h ; МК готов передать следующий блок данных
+STA_OK_ENTRY    EQU 045h ; MK готов передать запись о файле
+STA_OK_WRITE	EQU 046h ; MK ждет следующий блок для записи
+STA_OK_ADDR     EQU 047h ; МК готов передать адрес загрузки
+STA_OK_BLOCK    EQU 04Fh 
 
-ERR_START   	equ 040h
-ERR_WAIT    	equ 041h
-ERR_OK_NEXT 	equ 042h
-ERR_OK          equ 043h
-ERR_OK_READ     equ 044h
-ERR_OK_ENTRY    equ 045h
-ERR_OK_WRITE	equ 046h
-ERR_OK_ADDR  	equ 047h
-ERR_OK_BLOCK    equ 04Fh 
- ;----------------------------------------------------------------------------
-; A start of any command. 
-; A - command code
+Recv    EQU     GETCHAR
 
+;----------------------------------------------------------------------------
+; Начало любой команды. 
+; A - код команды
 StartCommand:
-; The first step is synchronization with the controller
-; 256 attempts are performed, each skipping 256+ bytes
-; That is, this is the maximum amount of data that the controller can transmit.
+     ; Первым этапом происходит синхронизация с контроллером
+     ; Принимается 256 попыток, в каждой из которых пропускается 256+ байт
+     ; То есть это максимальное кол-во данных, которое может передать контроллер
      PUSH	B
      PUSH	H
      PUSH	PSW
-     MVI	C, 0
 
 StartCommand1:
-     ; Receive mode (release the bus - port A) and initialize HL
-     CALL       SwitchRecv
+     ; Режимов приема и передачи нет - можно произвольно отправлять и принимать символы
+     ; CALL       SwitchRecv
 
-     ; Beginning of any command (play a sequence in address bus)
-     ;LXI	H, USER_PORT+1
-     MVI        A, 0
-     @out       USER_PORT+1
-     MVI        A, 44h
-     @out       USER_PORT+1
-     MVI        A, 40h
-     @out       USER_PORT+1
-     MVI        A, 0h
-     @out       USER_PORT+1
-
-     ; If there is synchronization, then the controller will respond with ERR_START
+     ; Если есть синхронизация, то контроллер ответит STA_START
      CALL	Recv
-     CPI	ERR_START
-     JZ		StartCommand2
-
-     ; Pause. And also we skip 256 bytes (in total it will be
-     ; 64 KB data skipped, maximum packet size)
-     PUSH	B
-     MVI	C, 0
-StartCommand3:
-     CALL	Recv
-     DCR	C
-     JNZ	StartCommand3
-     POP	B
-        
-     ; Попытки
-     DCR	C
-     JNZ	StartCommand1    
-
-     ; Код ошибки
-     MVI	A, ERR_START
-StartCommandErr2:
-     POP	B
-     POP	H
-     POP	B 
-     ;POP	B
-     RET
-
+     CPI	STA_START
+     JNZ	StartCommandErr2
 ;----------------------------------------------------------------------------
-; Synchronization with the controller is done. The controller should respond with ERR_OK_NEXT
+; Синхронизация с контроллером есть. Контроллер должен ответить STA_OK_DISK
 
-StartCommand2:
      ; Ответ         	
      CALL	WaitForReady
-     CPI	ERR_OK_NEXT
+     CPI	STA_OK_DISK
      JNZ	StartCommandErr2
 
      ; Переключаемся в режим передачи
-     CALL       SwitchSend
+     ;CALL       SwitchSend
 
      POP        PSW
      POP        H
      POP        B
 
      ; Передаем код команды
-     JMP        Send2
-
-;----------------------------------------------------------------------------
-; Switch to send mode
-
-SwitchSend:
-     CALL	Recv
-SwitchSend0:
-     MVI	A, SEND_MODE
-     @out	USER_PORT+3
+     JMP        PUTCHAR
+StartCommandErr2:
+     POP	B ; Прошлое значение PSW
+     POP	H ; Прошлое значение H
+     POP	B ; Прошлое значение B     
+     POP	B ; Выходим через функцию.
      RET
 
 ;----------------------------------------------------------------------------
-; Successful end of the command
-; and an additional cycle so that the microcontroller releases the bus
-Ret0:
-     XRA	A
+; Ожидание готовности МК.
 
-;----------------------------------------------------------------------------
-; Command ending with an error in A
-; and an additional cycle so that the microcontroller releases the bus
-EndCommand:
-     PUSH	PSW
-     CALL	Recv
-     POP	PSW
-     RET
-
-;----------------------------------------------------------------------------
-; Switch to receive mode
-
-SwitchRecv:
-     MVI	A, RECV_MODE
-     @out	USER_PORT+3
-     RET ;----------------------------------------------------------------------------
-;Switch to receive mode and wait for microcontroller be ready
-
-SwitchRecvAndWait:
-     CALL SwitchRecv
-
-;----------------------------------------------------------------------------
 WaitForReady:
      CALL	Recv
-     CPI	ERR_WAIT
+     CPI	STA_WAIT
      JZ		WaitForReady
      RET
 
 
-;----------------------------------------------------------------------------
-; Send a byte from A.
 
-Send2:
-     @out	USER_PORT
-
-;----------------------------------------------------------------------------
-; Receive a byte into А
-
-Recv:
-     MVI	A, 20h
-     @out	USER_PORT+1
-     XRA	A
-     @out	USER_PORT+1
-     @in	USER_PORT
-     RET ;
 ;  Initialize monitor
 INIT:   LXI     SP,MONSTACK
 ;
@@ -534,6 +506,34 @@ I10:    MOV     A,M
 ;  Uses 4 bytes of stack including return address
 ;
 GETCHAR:
+IFDEF  USE_PORT
+        PUSH    D
+        LXI     D,8000h       ;long timeout
+gc10:   DCX     D
+        MOV     A,D
+        ORA     E
+        JZ      gc90          ;exit if timeout
+        @in     FIFO_STATUS   ;read device status
+        ANI     RXEMPTY
+        JNZ     gc10          ;not ready yet.
+        ;PUSH    H
+        ;POP     H
+;
+;  Data received:  return CY=0. data in A
+        XRA     A             ;cy=0
+        @in     FIFO_DATA     ;read data
+        ;PUSH    PSW
+        ;CALL    0F815h
+        ;POP     PSW
+        POP     D
+        RET
+;
+;  Timeout:  return CY=1
+gc90:   STC                   ;cy=1
+        POP     D
+        RET
+ELSE
+IFNDEF USE_DMA
         mvi     A,99H ; A - input, B - output, Clow, Chigh - input
         @out    SERIAL_CONTROL
         MVI     A,1
@@ -567,6 +567,20 @@ gc90:   STC                             ;cy=1
         @out    CLIENT_STATUS
         POP     D
         RET
+
+ELSE
+        PUSH    D
+        PUSH    B
+        LXI     D,OUTCHAR
+        LXI     B,4001H
+        CALL    SET_DMAW
+        LDAX    D
+        ORA     A ; Clear C-flag
+        POP     B
+        POP     D
+        RET
+ENDIF
+ENDIF
 ;
 ;===========================================================================
 ;  Output character in A
@@ -574,6 +588,16 @@ gc90:   STC                             ;cy=1
 ;  Uses 4 bytes of stack including return address
 ;
 PUTCHAR:
+IFDEF  USE_PORT
+        PUSH    PSW           ;save byte to output
+pc10:   @in     FIFO_STATUS   ;read device status
+        ANI     TXFULL        ;tx full ?
+        JNZ     pc10
+        POP     PSW
+        @out    FIFO_DATA     ;transmit char
+        RET
+ELSE
+IFNDEF USE_DMA
         PUSH    PSW                     ;save byte to output
         mvi     A,89H ; A - output, B - output, Clow, Chigh - input
         @out    SERIAL_CONTROL
@@ -595,7 +619,22 @@ pc11::  ;CALL    CheckBrk
         @in     SERIAL_STATUS           ; wait for server confirms reading a byte
         ANI     TXRDY
         JZ      pc11
+ELSE
+        PUSH    D
+        PUSH    B
+        LXI     D,OUTCHAR
+        STAX    D
+        MVI     A,1
+        @out    SD
+        LXI     B,8001H
+        CALL    SET_DMAW
+        ORA     A
+        POP     B
+        POP     D
+ENDIF
+ENDIF
         RET
+OUTCHAR: DS 1
 
 CheckBrk:
         PUSH    H
@@ -606,6 +645,75 @@ CheckBrk:
         POP     H
         ANI     ?Ctrl+?Shift
         RET
+IFDEF USE_DMA
+; Set DMA with waiting of the end of transfer
+SET_DMAW:
+        CALL    SET_DMA
+WAIT_DMA:
+        @in     DMA+8
+        ANI     1;2
+        JZ      WAIT_DMA
+        RET
+
+; Program DMA controller
+
+; DE - start address
+; BC - packet length with MSB:
+;   10 - read cycle (transfer from memory to device)
+;   01 - write cycle (thansfer from device to memory)
+SET_DMA:
+        @IN     DMA+0Fh
+        INR     A
+        JZ      DVT37
+        MVI     A,0F6h
+        @out    DMA+8
+        MOV     A,E
+        @out    DMA
+        MOV     A,D
+        @out    DMA
+        DCX     B
+        MOV     A,C
+        @out    DMA+1
+        MOV     A,B
+        @out    DMA+1
+        INX     B
+        MVI     A,0F7h
+        @out    DMA+8
+        RET
+DVT37:
+     MOV   A,B
+     PUSH  PSW
+     ANI   3Fh
+     MOV   B,A
+     @OUT  DMA+0Ch
+        MVI     A,4 ; Stop channel 0
+        @OUT    DMA+0Ah
+               
+        MOV     A,E
+        @out    DMA+0
+        MOV     A,D
+        @OUT    DMA+0
+     DCX   B
+        MOV     A,C
+        @OUT    DMA+1
+     MOV   A,B
+        @OUT    DMA+1
+   INX   B
+
+     POP   PSW
+     ANI   0C0H
+     RRC
+     RRC
+     RRC
+     RRC
+        ;ORI     1
+        @OUT    DMA+0Bh
+        MVI     A,20h
+        @OUT    DMA+8
+     MVI   A,0 ; Start channel 1
+        @OUT    DMA+0Ah
+        RET
+ENDIF
 ;
 ;===========================================================================
 ;  Response string for GET TARGET STATUS request
@@ -668,10 +776,14 @@ NOTBP:  JMP     ENTER_MON       ;HL POINTS AT BREAKPOINT OPCODE
 ;===========================================================================
 ;  Main loop:  wait for command frame from master
 MAIN:   CALL    CheckBrk
+IFDEF   CPM
         JZ      0
-
+ELSE
+        JZ      0F86Ch
+ENDIF
         LXI     SP,MONSTACK     ;CLEAN STACK IS HAPPY STACK
         LXI     H,COMBUF        ;BUILD MESSAGE HERE
+IFNDEF USE_DMA
 ;
 ;  First byte is a function code
         CALL    GETCHAR         ;GET A FUNCTION (uses 6 bytes of stack)
@@ -704,6 +816,19 @@ MA10:   CALL    GETCHAR         ;GET A DATA BYTE
 MA80:   CALL    GETCHAR         ;GET THE CHECKSUM
         JC      MAIN            ;JIF TIMEOUT: RESYNC
         MOV     C,A             ;SAVE CHECKSUM
+ELSE
+        XCHG
+        LXI     B,401h
+        CALL    SET_DMAW
+        LDAX    D
+        MOV     C,A
+        CALL    SET_DMAW
+        XCHG
+        MVI     B,0
+        DCR     C
+        DAD     B
+        MOV     C,M
+ENDIF
 ;
 ;  Compare received checksum to that calculated on received buffer
 ;  (Sum should be 0)
@@ -1110,12 +1235,26 @@ SEND:
         LXI     H,COMBUF        ;POINTER TO DATA
         LDA     COMBUF+1        ;LENGTH OF DATA
         ADI     3               ;PLUS FUNCTION, LENGTH, CHECKSUM
+IFDEF USE_DMA
+        LXI     D,OUTCHAR
+        STAX    D
+        LXI     B,801h
+        MOV     A,C
+        @OUT    SD; 1 to SD Port
+        CALL    SET_DMAW
+        LDAX    D
+        MOV     C,A
+        MOV     D,H
+        MOV     E,L
+        CALL    SET_DMAW
+ELSE
         MOV     B,A             ;save count for loop
 SND10:  MOV     A,M
         CALL    PUTCHAR         ;SEND A BYTE (uses 6 bytes of stack)
         INX     H
         DCR     B
         JNZ     SND10
+ENDIF
         JMP     MAIN            ;BACK TO MAIN LOOP
 
 ;===========================================================================
@@ -1183,7 +1322,7 @@ DISP_ADR::	DW 0C000h	; VG75 Display Controller - 0C000h
 DMA_ADR::	DW 0E000h	; VT57 DMA Controller - 0E000h
 PALM_CTR_ADR::	DW 0CE00h	; Palmira Control Byte
 PPI3_ADR::	DW 0CA00h	; VV55 additional PPI3  - 0CA00h
-		DW 0,0	; Reserved for future use
+                DW 0,0	; Reserved for future use
 ;
 RAM_END     equ $               ;ADDRESS OF TOP+1 OF RAM
 ;
