@@ -65,12 +65,28 @@ Z80	equ     1
 ;
 ;============================================================================
 ;
+USE_PORT        EQU     1
+CPM             EQU     1
 ;  Hardware definitions
 ROM_START	equ 8800h;0C800h		; START OF MONITOR CODE
 RAM_START	equ 8c80h;0CC80h		; 0d310h            ;START OF MONITOR RAM
 USER_CODE	equ 8700h;0C700h			; RST 1 handler
 ?CTRL	equ	40h
 ?SHIFT	equ	20h
+IFDEF  USE_PORT
+
+FT245R  equ     0D0h    ;  base address of FT245R FIFO
+DATA    equ     0       ;  Data register
+STAT    equ     1       ;  Status register
+;
+;  Define FIFO port
+FIFO_DATA   equ   FT245R+DATA
+FIFO_STATUS equ   FT245R+STAT
+
+RXEMPTY equ     1       ; MASK FOR RX BUFFER EMPTY
+TXFULL  equ     2       ; MASK FOR TX BUFFER FULL
+
+ELSE
 ;
 ;  Equates for I/O mapped 8250 or 16450 serial port
 VV55	equ     50H			; 0C400h   ;base of 16450 UART
@@ -91,7 +107,7 @@ TXRDY	equ           2			; MASK FOR TX BUFFER EMPTY
 ;OP_IN   equ     0DBh
 ;OP_OUT  equ     0D3h
 ;OP_RET  equ     0C9h
-
+ENDIF
         LD      HL,START_CODE
         LD      DE,ROM_START
         LD      BC,INIOUT-ROM_START
@@ -381,14 +397,28 @@ ENDIF
 ;===========================================================================
 ;  Power on reset
 RESET:
+IFDEF   CPM
 	DI
 	LD	DE,VRAM_ADR
 	CALL	BIOS_CONFIG
-
+ENDIF
+IFDEF  USE_PORT
+	@SYSREG 0C0h
+	LD      A,12
+	out     (FT245R),A
+	out     (FT245R + 1), A
+	@SYSREG 80h
+ENDIF
 	LD	HL,Prompt
-	CALL	PUTS
+IFNDEF  CPM
+        CALL    0F818h
+ELSE
+        CALL    PUTS
+ENDIF
+IFNDEF USE_PORT
 	LD	A,9
 	CALL	StartCommand
+ENDIF
 	JP	Init
 BIOS_CONFIG:
 	LD	HL,(1)
@@ -478,6 +508,7 @@ ENDIF
 
 Prompt:     DB	"NOICE Z80 MONITOR V3.12 (CTRL+SHIFT TO BREAK)",0
 
+IFNDEF USE_PORT
 SEND_MODE	equ 10000000b		; Режим передачи (1 0 0 A СH 0 B CL)
 RECV_MODE	equ 10010000b		; Режим приема (1 0 0 A СH 0 B CL)
 
@@ -625,7 +656,8 @@ Recv:
      XOR	A
      @OUT	USER_PORT+1
      @IN	USER_PORT
-     ret					; 
+     ret					;
+ENDIF
 ;-------------------------------------------------------------------------
 ;  Initialize monitor
 INIT:   LD	SP,MONSTACK
@@ -704,6 +736,31 @@ NOINIT:
 ;  Uses 6 bytes of stack including return address
 ;
 GETCHAR:
+IFDEF  USE_PORT
+        PUSH    DE
+        LD      DE,8000h      ;long timeout
+gc10:   DEC     DE
+        LD      A,D
+        OR      E
+        JR      Z, gc90       ;exit if timeout
+        @in     FIFO_STATUS   ;read device status
+        AND     RXEMPTY
+        JR      NZ, gc10          ;not ready yet.
+;
+;  Data received:  return CY=0. data in A
+        XOR     A             ;cy=0
+        @in     FIFO_DATA     ;read data
+        ;PUSH    PSW
+        ;CALL    0F815h
+        ;POP     PSW
+        POP     DE
+        RET
+;
+;  Timeout:  return CY=1
+gc90:   SCF                   ;cy=1
+        POP     DE
+        RET
+ELSE
         LD	A,99H			; A - input, B - output, Clow, Chigh - input
         @OUT	SERIAL_CONTROL
         LD	A,1
@@ -737,6 +794,7 @@ gc90:   scf				; cy=1
         @OUT	CLIENT_STATUS
         pop	de
         ret
+ENDIF
 ;
 ;===========================================================================
 ;  Output character in A
@@ -744,6 +802,15 @@ gc90:   scf				; cy=1
 ;  Uses 6 bytes of stack including return address
 ;
 PUTCHAR:
+IFDEF  USE_PORT
+        PUSH    AF            ;save byte to output
+pc10:   @in     FIFO_STATUS   ;read device status
+        AND     TXFULL        ;tx full ?
+        JR      NZ, pc10
+        POP     AF
+        @out    FIFO_DATA     ;transmit char
+        RET
+ELSE
         push	af			; save byte to output
         LD	A,89H			; A - output, B - output, Clow, Chigh - input
         @OUT	SERIAL_CONTROL
@@ -766,6 +833,7 @@ pc11::	CALL    CheckBrk
         AND	TXRDY
         JR	Z,pc11
         ret
+ENDIF
 
 CheckBrk:
         push	hl
@@ -843,7 +911,11 @@ NOTBP:  JP      ENTER_MON       ;HL POINTS AT BREAKPOINT OPCODE
 ;===========================================================================
 ;  Main loop:  wait for command frame from master
 MAIN:   CALL	CheckBrk
+IFDEF CPM
         JP	Z,0
+ELSE
+        JP      Z,0F86Ch
+ENDIF
 
         LD	SP,MONSTACK		; CLEAN STACK IS HAPPY STACK
         LD	HL,COMBUF		; BUILD MESSAGE HERE

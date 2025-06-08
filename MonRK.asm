@@ -52,7 +52,7 @@
 CPM_OLDP        EQU     0 ; Old palmira CP/M generation without programmable DC
 ;USE_DMA        EQU     0
 USE_PORT        EQU     1
-CPM             EQU     1
+;CPM             EQU     1
 ;  Hardware definitions
 IF      CPM_OLDP
 ROM_START equ 8800h;//0C800h            ;START OF MONITOR CODE
@@ -60,7 +60,7 @@ ELSE
 ROM_START equ 8800h            ;START OF MONITOR CODE
 ENDIF
 ;RAM_START equ 0CD00h-0c800h+ROM_START;          ;START OF MONITOR RAM
-USER_CODE equ 8                 ; RST 1 handler
+USER_CODE equ 30h                 ; RST 6 handler
 ?Ctrl	equ	40h
 ?Shift	equ	20h
 
@@ -516,11 +516,6 @@ gc10:   DCX     D
         @in     FIFO_STATUS   ;read device status
         ANI     RXEMPTY
         JNZ     gc10          ;not ready yet.
-        ;PUSH    B
-        ;MVI     B,200
-        ;DCR     B
-        ;JNZ     $-1
-        ;POP     B
 ;
 ;  Data received:  return CY=0. data in A
         XRA     A             ;cy=0
@@ -727,7 +722,7 @@ TSTG:   DB      14                      ;2: PROCESSOR TYPE = 8085
         DW      0                       ;5,6: BOTTOM OF PAGED MEM (none)
         DW      0                       ;7,8: TOP OF PAGED MEM (none)
         DB      B1-B0                   ;9 BREAKPOINT INSTRUCTION LENGTH
-B0:     RST     1                       ;10+ BREKAPOINT INSTRUCTION
+B0:     RST     6                       ;10+ BREKAPOINT INSTRUCTION
 B1:     DB     "NoICE 8080 monitor V3.1" ;DESCRIPTION, ZERO
         DB      0
 TSTG_SIZE EQU   $ - TSTG                ;SIZE OF STRING
