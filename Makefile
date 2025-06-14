@@ -15,7 +15,7 @@ clean:
 	del *.PRN
 	del *.BIN
 
-all: MonRk.rkl MonZ80.rkl
+all: MonRk.rkl MonZ80.rkl MonRKRom.rkl
 
 send: MonRK.rkl
 	MODE $(PORT): baud=115200 parity=N data=8 stop=1
@@ -36,5 +36,11 @@ MonZ80.bin: MonZ80.REL
 
 MonZ80.rkl: MonZ80.BIN
 	../makerk/Release/makerk.exe 100 $< $@
+
+MonRKRom.rkl: MonRKRom.BIN
+	../makerk/Release/makerk.exe EC00 $< $@
+
+MonRkRom.bin: MonRkRom.REL
+	$(M80PATH)/L80 /P:100,$<,$@/N/E
 
 
