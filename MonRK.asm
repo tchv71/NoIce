@@ -52,7 +52,7 @@
 CPM_OLDP        EQU     0 ; Old palmira CP/M generation without programmable DC
 ;USE_DMA        EQU     0
 USE_PORT        EQU     1
-;CPM             EQU     1
+CPM             EQU     1
 ;  Hardware definitions
 IF      CPM_OLDP
 ROM_START equ 8800h;//0C800h            ;START OF MONITOR CODE
