@@ -368,3 +368,5 @@ FodyWeavers.xsd
 /NoIce.vcxproj.filters
 /MONZ80.REL
 /MONZ80.PRN
+/MONZ80.com
+/MONZ80.BIN.NoiCtx
