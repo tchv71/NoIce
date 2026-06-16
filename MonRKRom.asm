@@ -140,14 +140,14 @@ READRK:
         SBB     H
         MOV     B,A
         PUSH    H
-LOOP:   CALL    GETCHAR
+LOOP3:   CALL    GETCHAR
         JC      ERRRK
         MOV     M,A
         INX     H
         DCX     B
         MOV     A,B
         ORA     C
-        JNZ     LOOP
+        JNZ     LOOP3
         POP     H
         mvi     c,6
 LOOP2:  CALL    GETCHAR
@@ -431,7 +431,7 @@ I10:    MOV     A,M
 ;  Set function code for "GO".  Then if we reset after being told to
 ;  GO, we will come back with registers so user can see the crash
         MVI     A,FN_RUN_TARGET
-        STA     COMBUF
+        STA     COMBUF_
         JMP     RETURN_REGS             ;DUMP REGS, ENTER MONITOR
 ;
 ;===========================================================================
@@ -550,7 +550,7 @@ NOTBP:  JMP     ENTER_MON       ;HL POINTS AT BREAKPOINT OPCODE
 MAIN:   CALL    CheckBrk
         JZ      0F86Ch
         LXI     SP,MONSTACK     ;CLEAN STACK IS HAPPY STACK
-        LXI     H,COMBUF        ;BUILD MESSAGE HERE
+        LXI     H,COMBUF_        ;BUILD MESSAGE HERE
 ;
 ;  First byte is a function code
         CALL    GETCHAR         ;GET A FUNCTION (uses 6 bytes of stack)
@@ -591,7 +591,7 @@ MA80:   CALL    GETCHAR         ;GET THE CHECKSUM
         JNZ     MAIN            ;JIF BAD CHECKSUM
 ;
 ;  Process the message.
-        LDA     COMBUF+0        ;GET THE FUNCTION CODE
+        LDA     COMBUF_+0        ;GET THE FUNCTION CODE
         CPI     FN_GET_STATUS
         JZ      TARGET_STATUS
         CPI     FN_READ_MEM
@@ -613,7 +613,7 @@ MA80:   CALL    GETCHAR         ;GET THE CHECKSUM
 ;
 ;  Error: unknown function.  Complain
         MVI     A,FN_ERROR
-        STA     COMBUF+0        ;SET FUNCTION AS "ERROR"
+        STA     COMBUF_+0        ;SET FUNCTION AS "ERROR"
         MVI     A,1
         JMP     SEND_STATUS     ;VALUE IS "ERROR"
 
@@ -624,7 +624,7 @@ MA80:   CALL    GETCHAR         ;GET THE CHECKSUM
 TARGET_STATUS:
 ;
         LXI     H,TSTG          ;DATA FOR REPLY
-        LXI     D,COMBUF+1      ;RETURN BUFFER
+        LXI     D,COMBUF_+1      ;RETURN BUFFER
         MVI     B,TSTG_SIZE     ;LENGTH OF REPLY
         MOV     A,B
         STAX    D               ;SET SIZE IN REPLY BUFFER
@@ -646,16 +646,16 @@ TS10:   MOV     A,M             ;MOVE REPLY DATA TO BUFFER
 READ_MEM:
 ;
 ;  Set page
-;;      LDA     COMBUF+2
+;;      LDA     COMBUF_+2
 ;;      STA     PAGEIMAGE
 ;;      OUT     PAGELATCH
 ;
 ;  Get address
-        LHLD    COMBUF+3
-        LDA     COMBUF+5                ;NUMBER OF BYTES TO GET
+        LHLD    COMBUF_+3
+        LDA     COMBUF_+5                ;NUMBER OF BYTES TO GET
 ;
 ;  Prepare return buffer: FN (unchanged), LEN, DATA
-        LXI     D,COMBUF+1              ;POINTER TO LEN, DATA
+        LXI     D,COMBUF_+1              ;POINTER TO LEN, DATA
         STAX    D                       ;RETURN LENGTH = REQUESTED DATA
         INX     D
         ORA     A
@@ -682,16 +682,16 @@ GLP90:  JMP     SEND
 WRITE_MEM:
 ;
 ;  Set page
-;;      LDA     COMBUF+2
+;;      LDA     COMBUF_+2
 ;;      STA     PAGEIMAGE
 ;;      OUT     PAGELATCH
 ;
 ;  Get address
-        LXI     D,COMBUF+5      ;POINTER TO SOURCE DATA IN MESSAGE
-        LHLD    COMBUF+3        ;POINTER TO DESTINATION
+        LXI     D,COMBUF_+5      ;POINTER TO SOURCE DATA IN MESSAGE
+        LHLD    COMBUF_+3        ;POINTER TO DESTINATION
         XCHG
 ;
-        LDA     COMBUF+1        ;NUMBER OF BYTES IN MESSAGE
+        LDA     COMBUF_+1        ;NUMBER OF BYTES IN MESSAGE
         SBI     3               ;LESS PAGE, ADDRLO, ADDRHI
         JZ      WLP50           ;EXIT IF NONE REQUESTED
 ;
@@ -706,8 +706,8 @@ WLP10:  MOV     A,M             ;BYTE FROM HOST
         JNZ     WLP10
 ;
 ;  Compare to see if the write worked
-        LXI     D,COMBUF+5      ;POINTER TO SOURCE DATA IN MESSAGE
-        LHLD    COMBUF+3        ;POINTER TO DESTINATION
+        LXI     D,COMBUF_+5      ;POINTER TO SOURCE DATA IN MESSAGE
+        LHLD    COMBUF_+3        ;POINTER TO DESTINATION
         XCHG
         POP     B               ;SIZE AGAIN
 ;
@@ -742,7 +742,7 @@ RETURN_REGS:
         MVI     A,T_REGS_SIZE   ;NUMBER OF BYTES
 ;
 ;  Prepare return buffer: FN (unchanged), LEN, DATA
-        LXI     D,COMBUF+1      ;POINTER TO LEN, DATA
+        LXI     D,COMBUF_+1      ;POINTER TO LEN, DATA
         STAX    D               ;SAVE DATA LENGTH
         INX     D
 ;
@@ -764,8 +764,8 @@ GRLP:   MOV     A,M             ;GET BYTE TO A
 ;
 WRITE_REGS:
 ;
-        LXI     H,COMBUF+2      ;POINTER TO DATA
-        LDA     COMBUF+1        ;NUMBER OF BYTES
+        LXI     H,COMBUF_+2      ;POINTER TO DATA
+        LDA     COMBUF_+1        ;NUMBER OF BYTES
         ORA     A
         JZ      WRR80           ;JIF NO REGISTERS
 ;
@@ -872,7 +872,7 @@ ENTER_MON:
 ;
 SET_BYTES:
 ;
-        LXI     H,COMBUF+1
+        LXI     H,COMBUF_+1
         MOV     B,M             ;LENGTH = 4*NBYTES
         INX     H
         INR     B
@@ -915,7 +915,7 @@ SB10:   MOV     A,M             ;MEMORY PAGE
 ;
 ;  Return buffer with data from byte locations
 SB90:   MOV     A,C
-        STA     COMBUF+1        ;SET COUNT OF RETURN BYTES
+        STA     COMBUF_+1        ;SET COUNT OF RETURN BYTES
         POP     H               ;CLEAN STACK
 ;
 ;  Compute checksum on buffer, and send to master, then return
@@ -927,15 +927,15 @@ SB90:   MOV     A,C
 ;
 IN_PORT:
 ;
-;  Port address is at COMBUF+2 (and unused high address+3)
+;  Port address is at COMBUF_+2 (and unused high address+3)
 ;  Build "IN PORT" and "RET" around it.
         MVI     A,IN
-        STA     COMBUF+1
+        STA     COMBUF_+1
         MVI     A,RET
-        STA     COMBUF+3
+        STA     COMBUF_+3
 ;
 ;  Read port value
-        CALL    COMBUF+1
+        CALL    COMBUF_+1
 ;
 ;  Return byte read as "status"
         JMP     SEND_STATUS
@@ -946,19 +946,19 @@ IN_PORT:
 ;
 OUT_PORT:
 ;
-;  Port address is at COMBUF+2, (unused high address+3)
-;  Data to write is at COMBUF+4
+;  Port address is at COMBUF_+2, (unused high address+3)
+;  Data to write is at COMBUF_+4
 ;  Build "OUT PORT" and "RET" in combuffer
         MVI     A,OUT
-        STA     COMBUF+1
+        STA     COMBUF_+1
         MVI     A,RET
-        STA     COMBUF+3
+        STA     COMBUF_+3
 ;
 ;  Get data
-        LDA     COMBUF+4
+        LDA     COMBUF_+4
 ;
 ;  Write value to port
-        CALL    COMBUF+1
+        CALL    COMBUF_+1
 ;
 ;  Return status of OK
         XRA     A
@@ -968,13 +968,13 @@ OUT_PORT:
 ;  Build status return with value from "A"
 ;
 SEND_STATUS:
-        STA     COMBUF+2        ;SET STATUS
+        STA     COMBUF_+2        ;SET STATUS
         MVI     A,1
-        STA     COMBUF+1        ;SET LENGTH
+        STA     COMBUF_+1        ;SET LENGTH
 ;;;     JMP     SEND
 
 ;===========================================================================
-;  Append checksum to COMBUF and send to master
+;  Append checksum to COMBUF_ and send to master
 ;
 ;  Uses 6 bytes of stack (not including return address: jumped, not called)
 ;
@@ -986,8 +986,8 @@ SEND:
         MOV     M,A             ;STORE NEGATIVE OF CHECKSUM
 ;
 ;  Send buffer to master
-        LXI     H,COMBUF        ;POINTER TO DATA
-        LDA     COMBUF+1        ;LENGTH OF DATA
+        LXI     H,COMBUF_        ;POINTER TO DATA
+        LDA     COMBUF_+1        ;LENGTH OF DATA
         ADI     3               ;PLUS FUNCTION, LENGTH, CHECKSUM
         MOV     B,A             ;save count for loop
 SND10:  MOV     A,M
@@ -998,7 +998,7 @@ SND10:  MOV     A,M
         JMP     MAIN            ;BACK TO MAIN LOOP
 
 ;===========================================================================
-;  Compute checksum on COMBUF.  COMBUF+1 has length of data,
+;  Compute checksum on COMBUF_.  COMBUF_+1 has length of data,
 ;  Also include function byte and length byte
 ;
 ;  Returns:
@@ -1009,8 +1009,8 @@ SND10:  MOV     A,M
 ;  Uses 2 bytes of stack including return address
 ;
 CHECKSUM:
-        LXI     H,COMBUF        ;pointer to buffer
-        LDA     COMBUF+1        ;length of message
+        LXI     H,COMBUF_        ;pointer to buffer
+        LDA     COMBUF_+1        ;length of message
         ADI     2               ;plus function, length
         MOV     B,A             ;save count for loop
         XRA     A               ;init checksum to 0
@@ -1055,7 +1055,7 @@ T_REGS_SIZE equ $ - TASK_REGS
 ;  (Must be at least as long as TASK_REG_SIZE.  Larger values may improve
 ;  speed of NoICE memory load and dump commands)
 COMBUF_SIZE equ 67              ;DATA SIZE FOR COMM BUFFER
-COMBUF:     DS  2+COMBUF_SIZE+1+32 ;BUFFER ALSO HAS FN, LEN, AND CHECK
+COMBUF_:     DS  2+COMBUF_SIZE+1+32 ;BUFFER ALSO HAS FN, LEN, AND CHECK
 
 VRAM_ADR::	DW 0B770h	; VRAM buffer visible start address - 0B7C2h
 PPI_ADR::	DW 0C200h 	; VV55 keyboard Controller - 0C200h

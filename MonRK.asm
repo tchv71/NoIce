@@ -50,14 +50,15 @@
 ;============================================================================
 ;
 CPM_OLDP        EQU     0 ; Old palmira CP/M generation without programmable DC
-;USE_DMA        EQU     0
+;USE_DMA        EQU      1
+DEBUG           EQU     0;1
 USE_PORT        EQU     1
-CPM             EQU     1
+;CPM             EQU     1
 ;  Hardware definitions
 IF      CPM_OLDP
 ROM_START equ 8800h;//0C800h            ;START OF MONITOR CODE
 ELSE
-ROM_START equ 8800h            ;START OF MONITOR CODE
+ROM_START equ 0b100h            ;START OF MONITOR CODE
 ENDIF
 ;RAM_START equ 0CD00h-0c800h+ROM_START;          ;START OF MONITOR RAM
 USER_CODE equ 30h                 ; RST 6 handler
@@ -81,7 +82,7 @@ ELSE
 IFNDEF USE_DMA
 ;
 ;  Equates for I/O mapped 8250 or 16450 serial port
-VV55  equ    50H ; 0C400h   ;base of 16450 UART
+VV55  equ    10H ; 0C400h   ;base of 16450 UART
 USER_PORT equ VV55
 DATA    equ     0       ;  Data register
 STAT    equ     2       ;  Status register
@@ -89,8 +90,8 @@ STAT    equ     2       ;  Status register
 ;  Define monitor serial port
 SERIAL_STATUS   equ   VV55+STAT
 CLIENT_STATUS   equ   VV55+1
-SERIAL_DATA   equ   VV55+DATA
-SERIAL_CONTROL equ  VV55+3
+SERIAL_DATA     equ   VV55+DATA
+SERIAL_CONTROL  equ  VV55+3
 
 RXRDY equ           1         ; MASK FOR RX BUFFER FULL
 TXRDY equ           2         ; MASK FOR TX BUFFER EMPTY
@@ -378,6 +379,8 @@ IFDEF CPM
 Prompt:     DB     "NOICE 8080 MONITOR V3.20 (Ctrl+Shift to break)",10,13,0
 ELSE
 Prompt:     DB     "NOICE 8080 MONITOR V3.20 (CTRL+SHIFT TO BREAK)",10,13,0
+TX_STR:     DB     13,10,"TX: ",0
+RX_STR:     DB     13,10,"RX: ",0
 ENDIF
 
 ;SEND_MODE       equ 10000000b ; Режим передачи (1 0 0 A СH 0 B CL)
@@ -520,9 +523,15 @@ gc10:   DCX     D
 ;  Data received:  return CY=0. data in A
         XRA     A             ;cy=0
         @in     FIFO_DATA     ;read data
-        ;PUSH    PSW
-        ;CALL    0F815h
-        ;POP     PSW
+IF DEBUG
+        PUSH    PSW
+        CALL    0F815h
+        POP     PSW
+        PUSH    B
+        MVI     C,' '
+        CALL    0F809h
+        POP     B
+ENDIF
         POP     D
         RET
 ;
@@ -593,6 +602,15 @@ pc10:   @in     FIFO_STATUS   ;read device status
         JNZ     pc10
         POP     PSW
         @out    FIFO_DATA     ;transmit char
+IF DEBUG
+        PUSH    PSW
+        CALL    0F815h
+        POP     PSW
+        PUSH    B
+        MVI     C,' '
+        CALL    0F809h
+        POP     B
+ENDIF
         RET
 ELSE
 IFNDEF USE_DMA
@@ -1230,6 +1248,12 @@ SEND:
         MOV     M,A             ;STORE NEGATIVE OF CHECKSUM
 ;
 ;  Send buffer to master
+IF DEBUG
+        PUSH    H
+        LXI     H, TX_STR
+        CALL    0F818h
+        POP     H
+ENDIF
         LXI     H,COMBUF        ;POINTER TO DATA
         LDA     COMBUF+1        ;LENGTH OF DATA
         ADI     3               ;PLUS FUNCTION, LENGTH, CHECKSUM
@@ -1252,6 +1276,12 @@ SND10:  MOV     A,M
         INX     H
         DCR     B
         JNZ     SND10
+ENDIF
+IF DEBUG
+        PUSH    H
+        LXI     H, RX_STR
+        CALL    0F818h
+        POP     H
 ENDIF
         JMP     MAIN            ;BACK TO MAIN LOOP
 

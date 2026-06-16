@@ -372,3 +372,6 @@ FodyWeavers.xsd
 /MONZ80.BIN.NoiCtx
 /MonZ80.NOI
 /MonZ80.PRN.ASM
+/MONRKROM.PRN
+/MONRKROM.REL
+/MonRKRom.rkl
