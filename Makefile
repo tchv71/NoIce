@@ -36,7 +36,9 @@ MonZ80.bin: MonZ80.REL
 
 MonZ80.rkl: MonZ80.BIN
 	../makerk/Release/makerk.exe 100 $< $@
+	../m80noi/x64/Release/m80noi.exe MonZ80.PRN
 	copy /b/y MonZ80.BIN *.COM
+	copy /b/y MONZ80.com z:
 
 MonRKRom.rkl: MonRKRom.BIN
 	../makerk/Release/makerk.exe EC00 $< $@

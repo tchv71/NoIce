@@ -125,23 +125,23 @@ ENDIF
 	LD	BC,INIOUT-ROM_START
 	LDIR
 
-IF	0
-	LD	HL,(1)
-	PUSH	HL
-	LD	HL,(6)
-	PUSH	HL
+IF	1
+;	LD	HL,(1)
+;	PUSH	HL
+;	LD	HL,(6)
+;	PUSH	HL
 	LD	HL,INT_VEC+8;INT_VEC
 	LD	DE,R0+8
-	LD	BC, INT_VEC_END-R0-8
+	LD	BC, 3;INT_VEC_END-R0-8
 	LDIR
 
-	POP	HL
-	LD	(6),HL
-	POP	HL
-	LD	(1),HL
-	LD	A,0C3H
-	LD	(0),A
-	LD	(5),A
+;	POP	HL
+;	LD	(6),HL
+;	POP	HL
+;	LD	(1),HL
+;	LD	A,0C3H
+;	LD	(0),A
+;	LD	(5),A
 ENDIF
 	JP	RESET
 
@@ -217,9 +217,10 @@ R0:	JP	RESET
 ;  breakpoint instruction in the status string TSTG.  If RST NN cannot
 ;  be used, then CALL may be used instead.  However, this will restrict
 ;  the placement of breakpoints, since CALL is a three byte instruciton.
-	PUSH	AF
-	LD	A,1			;STATE = 1 (BREAKPOINT)
-	JP	INT_ENTRY
+	JP	BREAK
+	NOP
+	NOP
+	NOP
 	NOP
 	NOP
 ;
@@ -514,7 +515,7 @@ CONOU1:
 	jp	(hl)
 
 
-Prompt:	DB	1Fh,"NOICE Z80 MONITOR V3.12 (CTRL+SHIFT TO BREAK)",0
+Prompt:	DB	1Fh,"NOICE Z80 MONITOR V3.13 (CTRL+SHIFT TO BREAK)",0
 
 IFNDEF	MSX
 IFNDEF USE_PORT
@@ -788,15 +789,6 @@ PCHAR:	;PRINT A CHARACTER
 ;  Uses 6 bytes of stack including return address
 ;
 IFDEF	MSX
-ret3:
-	PUSH	AF
-	LD	A, D
-	LD	(0FFFFh), A
-	LD	A, E
-	OUT	(0A8h), A
-	POP	AF
-	EI
-	RET
 SetSlt2:
 	DI
 	IN	A,(0A8h)
@@ -815,25 +807,47 @@ SetSlt2:
 ;	OR	20H
 ;	OUT	(0A8h), A ; Page 2 (8000h-0BFFFh)
 	RET
+RetSlt:
+	PUSH	AF
+	LD	A, D
+	LD	(0FFFFh), A
+	LD	A, E
+	OUT	(0A8h), A
+	POP	AF
+	EI
+	RET
 ENDIF
 GETCHAR:
-IFDEF  USE_PORT
 	PUSH	DE
-	LD	DE,8000h		;long timeout
-gc10:	DEC	DE
-	LD	A,D 
-	OR	E
-	JR	Z, gc90	 ;exit if timeout
 IFDEF	MSX
-	PUSH	DE
 	CALL	SetSlt2
-	@IN	FIFO_STATUS		;read device status
-	CALL	Ret3
-	POP	DE
+ENDIF
+	CALL	GetCh1
+IFDEF	MSX
+	CALL	RetSlt
 ENDIF
 IFDEF	DEBUG
 	PUSH	AF
 	CALL	PHEX;0F815h
+	POP	AF
+ENDIF
+	POP	DE
+	RET
+GetCh1:
+IFDEF  USE_PORT
+	PUSH	HL
+	LD	HL,8000h		;long timeout
+gc10:	DEC	HL
+	LD	A,H 
+	OR	L
+	JR	Z, gc90	 ;exit if timeout
+	@IN	FIFO_STATUS		;read device status
+IFDEF	DEBUG
+	PUSH	AF
+	CALL	RetSlt
+	CALL	PHEX;0F815h
+	CALL	CheckBrk
+	CALL	SetSlt2
 	POP	AF
 ENDIF
 	AND	RXEMPTY
@@ -841,24 +855,15 @@ ENDIF
 ;
 ;  Data received:  return CY=0. data in A
 IFDEF	MSX
-	PUSH	DE
-	CALL	SetSlt2
 	@IN	FIFO_DATA		;read device data
-	CALL	Ret3
-	POP	DE
-ENDIF
-IFDEF	DEBUG
-	PUSH	PSW
-	CALL	PHEX;0F815h
-	POP	PSW
 ENDIF
 	OR	A ;cy = 0
-	POP	DE
+	POP	HL
 	RET
 ;
 ;  Timeout:  return CY=1
 gc90:	SCF				;cy=1
-	POP	DE
+	POP	HL
 	RET
 ELSE
 GETCHAR:
@@ -906,34 +911,34 @@ ENDIF
 ;  Uses 6 bytes of stack including return address
 ;
 PUTCHAR:
+	PUSH	DE
+IFDEF	MSX
+	PUSH	AF
+	CALL	SetSlt2
+	POP	AF
+ENDIF
+	CALL	PutCh1
+IFDEF	MSX
+	CALL	RetSlt
+ENDIF
+IFDEF	DEBUG
+	PUSH	AF
+	CALL	PHEX;0F815h
+	POP	AF
+ENDIF
+	POP	DE
+	RET
+
+PutCh1:
 IFDEF  USE_PORT
 	PUSH	AF			;save byte to output
 pc10:	call	CheckBrk
 	;jp	z,0
-IFDEF	MSX
-	PUSH	DE
-	CALL	SetSlt2
 	@in	FIFO_STATUS		;read device status
-	call	Ret3
-	POP	DE
-ENDIF
-IFDEF DEBUG
-	PUSH	AF
-	call	PHEX
-	POP	AF
-ENDIF
 	AND	TXFULL			;tx full ?
 	JR	NZ, pc10
 	POP	AF
-IFDEF	MSX
-	PUSH	DE
-	PUSH	AF
-	CALL	SetSlt2
-	POP	AF
 	@out	FIFO_DATA		;transmit char
-	call	Ret3
-	POP	DE
-ENDIF
 	RET
 ELSE
 	push	af			; save byte to output
@@ -1021,6 +1026,10 @@ FN_ERROR	equ 0F0h			; error reply to unknown op-code
 ;  Enter here via RST nn for breakpoint:  AF, PC are stacked.
 ;  Enter with A=interrupt code = processor state
 ;  Interrupt status is not changed from user program
+BREAK:
+	PUSH	AF
+	LD	A,1			;STATE = 1 (BREAKPOINT)
+	;JP	INT_ENTRY
 INT_ENTRY:
 ;
 ;  Interrupts may be on:  get IFF as quickly as possible, so we can DI
