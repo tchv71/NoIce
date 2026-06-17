@@ -65,10 +65,10 @@ Z80	equ	1
 ;
 ;============================================================================
 ;
-USE_PORT	EQU	1
 MSX		EQU	1
 CPM		EQU	1
 ;DEBUG		EQU	1
+
 ;  Hardware definitions
 IFDEF MSX
 ROM_START	equ 0D100h;			; START OF MONITOR CODE
@@ -80,8 +80,6 @@ USER_CODE	equ ROM_START-100h		; RST 1 handler
 ?CTRL	equ	40h
 ?SHIFT	equ	20h
 
-
-IFDEF  USE_PORT
 
 IFDEF	MSX
 FT245R  equ	8000h;0FFF8h; 094h	;  base address of FT245R FIFO
@@ -98,28 +96,6 @@ FIFO_STATUS equ   FT245R+STAT
 RXEMPTY equ	1	; MASK FOR RX BUFFER EMPTY
 TXFULL  equ	2	; MASK FOR TX BUFFER FULL
 
-ELSE
-;
-;  Equates for I/O mapped 8250 or 16450 serial port
-VV55	equ	50H	; 0C400h   ;base of 16450 UART
-USER_PORT	equ VV55
-DATA	equ	0	;  Data register
-STAT	equ	2	; Status register
-;
-;  Define monitor serial port
-SERIAL_STATUS	equ	VV55+STAT
-CLIENT_STATUS	equ	VV55+1
-SERIAL_DATA	equ	VV55+DATA
-SERIAL_CONTROL	equ	VV55+3
-
-RXRDY	equ		1			; MASK FOR RX BUFFER FULL
-TXRDY	equ		2			; MASK FOR TX BUFFER EMPTY
-;
-;  op-code equates for IN and OUT
-;OP_IN   equ	0DBh
-;OP_OUT  equ	0D3h
-;OP_RET  equ	0C9h
-ENDIF
 	LD	HL,START_CODE
 	LD	DE,ROM_START
 	LD	BC,INIOUT-ROM_START
@@ -419,14 +395,12 @@ IFNDEF	MSX
 	CALL	BIOS_CONFIG
 ENDIF
 ENDIF
-IFDEF  USE_PORT
 IFNDEF	MSX
 	@SYSREG 0C0h
 	LD	A,12
 	out	(FT245R),A
 	out	(FT245R + 1), A
 	@SYSREG	80h
-ENDIF
 ENDIF
 IFNDEF  CPM
 	CALL	0FACEh
@@ -436,10 +410,6 @@ IFNDEF  CPM
 	CALL	0F818h
 ELSE
 	CALL	PUTS
-ENDIF
-IFNDEF USE_PORT
-	LD	A,9
-	CALL	StartCommand
 ENDIF
 	JP	Init
 IFNDEF	MSX
@@ -515,161 +485,7 @@ CONOU1:
 	jp	(hl)
 
 
-Prompt:	DB	1Fh,"NOICE Z80 MONITOR V3.13 (CTRL+SHIFT TO BREAK)",0
-
-IFNDEF	MSX
-IFNDEF USE_PORT
-SEND_MODE	equ 10000000b		; Режим передачи (1 0 0 A СH 0 B CL)
-RECV_MODE	equ 10010000b		; Режим приема (1 0 0 A СH 0 B CL)
-
-ERR_START   	equ 040h
-ERR_WAIT	equ 041h
-ERR_OK_NEXT 	equ 042h
-ERR_OK		equ 043h
-ERR_OK_READ	equ 044h
-ERR_OK_ENTRY	equ 045h
-ERR_OK_WRITE	equ 046h
-ERR_OK_ADDR  	equ 047h
-ERR_OK_BLOCK	equ 04Fh
- ;----------------------------------------------------------------------------
-; A start of any command. 
-; A - command code
-
-StartCommand:
-; The first step is synchronization with the controller
-; 256 attempts are performed, each skipping 256+ bytes
-; That is, this is the maximum amount of data that the controller can transmit.
-	push	bc
-	push	hl
-	push	af
-	LD	C, 0
-
-StartCommand1:
-	; Receive mode (release the bus - port A) and initialize HL
-	CALL	SwitchRecv
-
-	; Beginning of any command (play a sequence in address bus)
-	;LXI	H, USER_PORT+1
-	LD	A, 0
-	@OUT	USER_PORT+1
-	LD	A, 44h
-	@OUT	USER_PORT+1
-	LD	A, 40h
-	@OUT	USER_PORT+1
-	LD	A, 0h
-	@OUT	USER_PORT+1
-
-	; If there is synchronization, then the controller will respond with ERR_START
-	CALL	Recv
-	CP	ERR_START
-	JP	Z,StartCommand2
-
-	; Pause. And also we skip 256 bytes (in total it will be
-	; 64 KB data skipped, maximum packet size)
-	push	bc
-	LD	C, 0
-StartCommand3:
-	CALL	Recv
-	DEC	C
-	JP	NZ,StartCommand3
-	pop	bc
-
-	; Попытки
-	DEC	C
-	JP	NZ,StartCommand1
-
-	; Код ошибки
-	LD	A, ERR_START
-StartCommandErr2:
-	pop	bc
-	pop	hl
-	pop	bc
-	;POP	B
-	ret
-
-;----------------------------------------------------------------------------
-; Synchronization with the controller is done. The controller should respond with ERR_OK_NEXT
-
-StartCommand2:
-	; Ответ	   	
-	CALL	WaitForReady
-	CP	ERR_OK_NEXT
-	JP	NZ,StartCommandErr2
-
-	; Переключаемся в режим передачи
-	CALL	SwitchSend
-
-	pop	af
-	pop	hl
-	pop	bc
-
-	; Передаем код команды
-	JP	Send2
-
-;----------------------------------------------------------------------------
-; Switch to send mode
-
-SwitchSend:
-	CALL	Recv
-SwitchSend0:
-	LD	A, SEND_MODE
-	@OUT	USER_PORT+3
-	ret
-
-;----------------------------------------------------------------------------
-; Successful end of the command
-; and an additional cycle so that the microcontroller releases the bus
-Ret0:
-	XOR	A
-
-;----------------------------------------------------------------------------
-; Command ending with an error in A
-; and an additional cycle so that the microcontroller releases the bus
-EndCommand:
-	push	af
-	CALL	Recv
-	pop	af
-	ret
-
-;----------------------------------------------------------------------------
-; Switch to receive mode
-
-SwitchRecv:
-	LD	A, RECV_MODE
-	@OUT	USER_PORT+3
-	ret
-; ----------------------------------------------------------------------------
-;Switch to receive mode and wait for microcontroller be ready
-
-SwitchRecvAndWait:
-	CALL	SwitchRecv
-
-;----------------------------------------------------------------------------
-WaitForReady:
-	CALL	Recv
-	CP	ERR_WAIT
-	JP	Z,WaitForReady
-	ret
-
-
-;----------------------------------------------------------------------------
-; Send a byte from A.
-
-Send2:
-	@OUT	USER_PORT
-
-;----------------------------------------------------------------------------
-; Receive a byte into А
-
-Recv:
-	LD	A, 20h
-	@OUT	USER_PORT+1
-	XOR	A
-	@OUT	USER_PORT+1
-	@IN	USER_PORT
-	ret					;
-ENDIF
-ENDIF
+Prompt:	DB	1Fh,"NOICE Z80 MONITOR V3.23 (CTRL+SHIFT TO BREAK)",0
 
 ;-------------------------------------------------------------------------
 ;  Initialize monitor
@@ -791,11 +607,11 @@ PCHAR:	;PRINT A CHARACTER
 IFDEF	MSX
 SetSlt2:
 IF 0
-	DI
 	IN	A,(0A8h)
 	LD	E, A
 	AND	00001111b; 3Fh
 	OR	10100000b; 80h ; Slot 2, page 2-3
+	DI
 	OUT	(0A8h),A
 	LD	A,(0FFFFh)
 	CPL
@@ -851,7 +667,6 @@ ENDIF
 	POP	DE
 	RET
 GetCh1:
-IFDEF  USE_PORT
 	PUSH	HL
 	LD	HL,8000h		;long timeout
 gc10:	DEC	HL
@@ -882,42 +697,6 @@ ENDIF
 gc90:	SCF				;cy=1
 	POP	HL
 	RET
-ELSE
-GETCHAR:
-	LD	A,99H			; A - input, B - output, Clow, Chigh - input
-	@OUT	SERIAL_CONTROL
-	LD	A,1
-	@OUT	CLIENT_STATUS
-	push	de
-	LD	DE,8000h		; long timeout
-gc10:   DEC	bc
-	LD	A,D
-	OR	E
-	JR	Z,gc90			; exit if timeout
-	@IN	SERIAL_STATUS		; read device status
-	AND	RXRDY
-	JR	NZ,gc10			; not ready yet.
-;
-;  Data received:  return CY=0. data in A
-	XOR	A			; cy=0
-	@IN	SERIAL_DATA		; read data
-	push	af
-	XOR	a
-	@OUT	CLIENT_STATUS
-gc11:   @IN	SERIAL_STATUS		; wait for server
-	AND	RXRDY
-	JP	Z,gc11
-	pop	af
-	pop	de
-	ret
-;
-;  Timeout:  return CY=1
-gc90:   scf				; cy=1
-	LD	A,0
-	@OUT	CLIENT_STATUS
-	pop	de
-	ret
-ENDIF
 
 
 
@@ -947,7 +726,6 @@ ENDIF
 	RET
 
 PutCh1:
-IFDEF  USE_PORT
 	PUSH	AF			;save byte to output
 pc10:	call	CheckBrk
 	;jp	z,0
@@ -957,30 +735,6 @@ pc10:	call	CheckBrk
 	POP	AF
 	@out	FIFO_DATA		;transmit char
 	RET
-ELSE
-	push	af			; save byte to output
-	LD	A,89H			; A - output, B - output, Clow, Chigh - input
-	@OUT	SERIAL_CONTROL
-	LD	A,2
-	@OUT	CLIENT_STATUS		; // Ready to send
-pc10:	CALL	CheckBrk
-	;JP	Z,0
-	@IN	SERIAL_STATUS		; read device status
-	AND	TXRDY			; rx ready ?
-	JR	NZ,pc10
-
-	pop	af
-	@OUT	SERIAL_DATA		; transmit char - error in wiring! must write to _STATUS
-	XOR	a
-	@OUT	CLIENT_STATUS
-
-pc11::	CALL	CheckBrk
-	;JP	Z,0
-	@IN	SERIAL_STATUS		; wait for server confirms reading a byte
-	AND	TXRDY
-	JR	Z,pc11
-	ret
-ENDIF
 
 CheckBrk:
 	push	hl
