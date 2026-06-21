@@ -101,6 +101,9 @@ FIFO_STATUS equ   FT245R+STAT
 RXEMPTY equ	1	; MASK FOR RX BUFFER EMPTY
 TXFULL  equ	2	; MASK FOR TX BUFFER FULL
 
+	aseg
+	org	100h
+
 	LD	HL,START_CODE
 	LD	DE,ROM_START
 	LD	BC,INIOUT-ROM_START
@@ -184,7 +187,7 @@ INITSTACK:
 ;
 ;  Monitor stack
 ;  (Calculated use is at most 6 bytes.  Leave plenty of spare)
-	DS	16
+	DS	32
 MONSTACK:
 ;
 ;  Target registers:  order must match that in TRGZ80.C

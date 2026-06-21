@@ -32,7 +32,7 @@ MonRk.bin: MonRk.REL
 	$(M80PATH)/L80 /P:100,$<,$@/N/E
 
 MonZ80.bin: MonZ80.REL
-	$(M80PATH)/L80 /P:100,$<,$@/N/E
+	$(M80PATH)/L80 ,$<,$@/N/E
 
 MonZ80.rkl: MonZ80.BIN
 	../makerk/Release/makerk.exe 100 $< $@
