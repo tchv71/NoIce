@@ -71,7 +71,11 @@ CPM		EQU	1
 
 ;  Hardware definitions
 IFDEF MSX
-ROM_START	equ 0D100h;			; START OF MONITOR CODE
+IFDEF	DEBUG
+ROM_START	equ 7100h;0D100h;			; START OF MONITOR CODE
+ELSE
+ROM_START	equ 0D100h;				; START OF MONITOR CODE
+ENDIF
 ELSE
 ROM_START	equ 0b100h;0C800h		; START OF MONITOR CODE
 ENDIF
@@ -82,7 +86,8 @@ USER_CODE	equ ROM_START-100h		; RST 1 handler
 
 
 IFDEF	MSX
-FT245R  equ	8000h;0FFF8h; 094h	;  base address of FT245R FIFO
+FT245R		equ	0BFF8h;0FFF8h; 094h	;  base address of FT245R FIFO
+FT245R_MAGIC	equ	34h
 ELSE
 FT245R  equ	0D0h	;  base address of FT245R FIFO
 ENDIF
@@ -119,8 +124,54 @@ IF	1
 ;	LD	(0),A
 ;	LD	(5),A
 ENDIF
+IFDEF	MSX
+	IN	A,(0A8h)
+	LD	E, A
+	LD	A,(0FFFFh)
+	CPL
+	LD	D, A
+	PUSH	HL
+	PUSH	DE
+	LD	H,80h
+	LD	A, 10001010b
+	CALL	24h ; ENASLT
+	POP	DE
+	POP	HL
+	LD	A, (FIFO_DATA+2)
+	CP	FT245R_MAGIC
+	JR	NZ, tr01
+	LD	A, 10001010b
+	LD	(SLT_ID), A
+	JR	tr02
+
+tr01:
+	LD	H,80h
+	LD	A, 10001001b
+	PUSH	DE
+	CALL	24h ; ENASLT
+	POP	DE
+	LD	A, (FIFO_DATA+2)
+	CP	FT245R_MAGIC
+	JR	NZ, tr03
+	LD	A, 10001001b
+	LD	(SLT_ID), A
+tr02:
+	LD	A, D
+	LD	(0FFFFh), A
+	LD	A, E
+	OUT	(0A8h), A
+
+ENDIF
 	JP	RESET
 
+tr03:
+	LD	A, D
+	LD	(0FFFFh), A
+	LD	A, E
+	OUT	(0A8h), A
+	LD	HL,PromptNoHardw
+	CALL	PUTS
+	JP	0
 
 ;============================================================================
 ;  RAM definitions:  top 1K
@@ -485,7 +536,9 @@ CONOU1:
 	jp	(hl)
 
 
-Prompt:	DB	1Fh,"NOICE Z80 MONITOR V3.23 (CTRL+SHIFT TO BREAK)",0
+Prompt:	DB	1Fh,"NOICE Z80 MONITOR V3.24 (CTRL+SHIFT TO BREAK)",0
+PromptNoHardw:
+	DB	13,10,"Hardware not found",0
 
 ;-------------------------------------------------------------------------
 ;  Initialize monitor
@@ -605,6 +658,7 @@ PCHAR:	;PRINT A CHARACTER
 ;  Uses 6 bytes of stack including return address
 ;
 IFDEF	MSX
+IF FT245R GE 255
 SetSlt2:
 IF 0
 	IN	A,(0A8h)
@@ -633,7 +687,8 @@ ELSE
 	PUSH	DE
 	PUSH	BC
 	LD	H,80h
-	LD	A, 10001010b
+	;LD	A, 10001010b
+	LD	A, (SLT_ID)
 	CALL	24h ; ENASLT
 	POP	BC
 	POP	DE
@@ -650,14 +705,19 @@ RetSlt:
 	EI
 	RET
 ENDIF
+ENDIF
 GETCHAR:
 	PUSH	DE
 IFDEF	MSX
+IF FT245R GE 255
 	CALL	SetSlt2
+ENDIF
 ENDIF
 	CALL	GetCh1
 IFDEF	MSX
+IF FT245R GE 255
 	CALL	RetSlt
+ENDIF
 ENDIF
 IFDEF	DEBUG
 	PUSH	AF
@@ -676,10 +736,14 @@ gc10:	DEC	HL
 	@IN	FIFO_STATUS		;read device status
 IFDEF	DEBUG
 	PUSH	AF
+IF FT245R GE 255
 	CALL	RetSlt
+ENDIF
 	CALL	PHEX;0F815h
 	CALL	CheckBrk
+IF FT245R GE 255
 	CALL	SetSlt2
+ENDIF
 	POP	AF
 ENDIF
 	AND	RXEMPTY
@@ -709,13 +773,17 @@ gc90:	SCF				;cy=1
 PUTCHAR:
 	PUSH	DE
 IFDEF	MSX
+IF FT245R GE 255
 	PUSH	AF
 	CALL	SetSlt2
 	POP	AF
 ENDIF
+ENDIF
 	CALL	PutCh1
 IFDEF	MSX
+IF FT245R GE 255
 	CALL	RetSlt
+ENDIF
 ENDIF
 IFDEF	DEBUG
 	PUSH	AF
@@ -1301,6 +1369,8 @@ DMA_ADR::	DW 0		; VT57 DMA Controller - 0C600h;0E000h
 PALM_CTR_ADR::	DW 0		; Palmira Control Byte
 PPI3_ADR::	DW 0		; VV55 additional PPI3  - 0CA00h
 		DW 0,0		; Reserved for future use
+
+SLT_ID:		DB	10001010b ; Sloth 2-2
 else
 VRAM_ADR::	DW 0B770h	; VRAM buffer visible start address - 0B7C2h
 PPI_ADR::	DW 0C200h 	; VV55 keyboard Controller - 0C200h
